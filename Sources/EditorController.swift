@@ -137,7 +137,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             if let readyMode, readyMode != mode { return } // stale instance
             preserver = SourcePreserver(original: text, baseline: baseline)
             isReady = true
-            if let window = webView.window, window.firstResponder !== webView { window.makeFirstResponder(webView) }
+            focusWhenInWindow()
             log.info("editor ready, mode \(self.mode.rawValue, privacy: .public)")
             onReady?()
         case "input":
@@ -164,6 +164,19 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             log.error("js error: \(body["message"] as? String ?? "", privacy: .public)")
         default:
             break
+        }
+    }
+
+    /// Keyboard focus to the editor once it is ready. On a fresh launch the web view may not be in its
+    /// window yet when the page reports ready, so retry for a few seconds.
+    private func focusWhenInWindow(attempt: Int = 0) {
+        if let window = webView.window {
+            if window.firstResponder !== webView { window.makeFirstResponder(webView) }
+            return
+        }
+        guard attempt < 50 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            MainActor.assumeIsolated { self?.focusWhenInWindow(attempt: attempt + 1) }
         }
     }
 

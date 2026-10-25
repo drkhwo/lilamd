@@ -65,6 +65,10 @@ struct SourcePreserver {
             }
         }
 
+        func isNextToInsertedLine(_ c: Int) -> Bool {
+            (c > 0 && currentToBaseline[c - 1] == nil) || (c + 1 < currentLines.count && currentToBaseline[c + 1] == nil)
+        }
+
         var prev = (o: -1, b: -1, c: -1)
         for anchor in anchors + [(originalLines.count, baselineLines.count, currentLines.count)] {
             let oRange = (prev.o + 1)..<anchor.o
@@ -81,9 +85,10 @@ struct SourcePreserver {
                         // Unchanged line: the original spelling, or nothing if the engine invented it.
                         if let o = map[b - bRange.lowerBound] {
                             out.append((originalLines[o].content, originalLines[o].terminator))
-                        } else if isLast || cRange.count != bRange.count {
-                            // Keep an engine-added line when lines were inserted/removed around it (it may
-                            // now separate new content) and the final "" (= file ends with a newline).
+                        } else if isLast || (cRange.count != bRange.count && isNextToInsertedLine(c)) {
+                            // Keep an engine-added line only if it now separates newly typed lines, and the
+                            // final "" (= file ends with a newline). Otherwise it is the engine's own
+                            // spelling (e.g. Lute's second blank line before a table) and is dropped.
                             out.append((currentLines[c], isLast ? nil : lineEnding))
                         }
                     } else if cRange.count == bRange.count, let o = map[c - cRange.lowerBound] {

@@ -159,6 +159,19 @@
     // is drawn on an empty line that does not exist in the file. Put it into the first cell instead.
     if (inner.ir) {
       const root = inner.ir.element;
+      // Vditor itself inserts an empty paragraph above a table that starts the document when ArrowUp
+      // (also Cmd+Up) or ArrowLeft is pressed in its first cell. Keep the native caret movement instead.
+      root.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowUp" && e.key !== "ArrowLeft") return;
+        const sel = getSelection();
+        if (!sel.rangeCount) return;
+        const n = sel.getRangeAt(0).startContainer;
+        const cell = (n.nodeType === 3 ? n.parentElement : n).closest("th, td");
+        const table = cell && cell.closest("table");
+        if (!table || table.parentElement !== root || table.previousElementSibling) return;
+        if (table.querySelector("th, td") !== cell) return;
+        e.stopPropagation();
+      }, true);
       document.addEventListener("selectionchange", () => {
         if (!vditor || vditor.vditor !== inner || inner.currentMode !== "ir") return;
         const sel = getSelection();
