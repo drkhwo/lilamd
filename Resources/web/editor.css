@@ -1,0 +1,10 @@
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+body { background: #ffffff; }
+body.dark { background: #1d2125; }
+#editor { height: 100%; }
+.vditor { border: none !important; }
+.vditor-toolbar { display: none !important; }
+.vditor-reset { font-size: 15px; }
+.vditor-ir pre.vditor-reset, .vditor-sv { padding: 24px 48px !important; }
+.vditor-sv, .vditor-sv * { font-family: ui-monospace, "SF Mono", Menlo, monospace !important; font-size: 13px; }
+.vditor-copy, .vditor-ir__preview .vditor-copy { display: none !important; }

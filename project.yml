@@ -1,0 +1,81 @@
+name: MDEditor
+options:
+  bundleIdPrefix: local.mdeditor
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+targets:
+  MDEditor:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: Resources/vditor
+        type: folder
+        buildPhase: resources
+      - path: Resources/web
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_NAME: "MD Editor"
+        PRODUCT_BUNDLE_IDENTIFIER: local.mdeditor.MDEditor
+        PRODUCT_MODULE_NAME: MDEditor
+        ENABLE_APP_SANDBOX: NO
+        GENERATE_INFOPLIST_FILE: NO
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: MD Editor
+        CFBundleName: MD Editor
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSApplicationCategoryType: public.app-category.productivity
+        NSHumanReadableCopyright: ""
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Markdown Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Default
+            LSItemContentTypes: [net.daringfireball.markdown]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: net.daringfireball.markdown
+            UTTypeDescription: Markdown Document
+            UTTypeConformsTo: [public.plain-text]
+            UTTypeTagSpecification:
+              public.filename-extension: [md, markdown]
+              public.mime-type: [text/markdown]
+  MDEditorTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: MDEditor
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MD Editor.app/Contents/MacOS/MD Editor"
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: local.mdeditor.MDEditorTests
+        MDEDITOR_SAMPLES: "$(SRCROOT)/samples"
+schemes:
+  MDEditor:
+    build:
+      targets:
+        MDEditor: all
+        MDEditorTests: [test]
+    test:
+      config: Debug
+      targets: [MDEditorTests]
+      environmentVariables:
+        MDEDITOR_SAMPLES: "$(SRCROOT)/samples"
