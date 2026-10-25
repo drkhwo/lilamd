@@ -54,13 +54,26 @@ final class FileWatcher {
             try? document.revert(toContentsOf: url, ofType: type)
             return
         }
-        let alert = NSAlert()
-        alert.messageText = "“\(url.lastPathComponent)” was changed by another app."
-        alert.informativeText = "You have unsaved changes in MD Editor. Reload the file from disk (your changes are lost) or keep your version (saving will ask before overwriting)?"
-        alert.addButton(withTitle: "Keep My Version")
-        alert.addButton(withTitle: "Reload from Disk")
+        let alert = Self.makeConflictAlert(fileName: url.lastPathComponent)
         alert.beginSheetModal(for: window) { response in
-            if response == .alertSecondButtonReturn { try? document.revert(toContentsOf: url, ofType: type) }
+            if response == Self.reloadResponse { try? document.revert(toContentsOf: url, ofType: type) }
         }
+    }
+
+    static let keepResponse = NSApplication.ModalResponse.alertFirstButtonReturn
+    static let reloadResponse = NSApplication.ModalResponse.alertSecondButtonReturn
+
+    /// The safe choice ("Keep My Version") is the default button (Return) and has the keyboard focus
+    /// (Space); the destructive "Reload from Disk" has no key equivalent and must be clicked.
+    static func makeConflictAlert(fileName: String) -> NSAlert {
+        let alert = NSAlert()
+        alert.messageText = "“\(fileName)” was changed by another app."
+        alert.informativeText = "You have unsaved changes in MD Editor. Reload the file from disk (your changes are lost) or keep your version (saving will ask before overwriting)?"
+        let keep = alert.addButton(withTitle: "Keep My Version")
+        let reload = alert.addButton(withTitle: "Reload from Disk")
+        keep.keyEquivalent = "\r"
+        reload.keyEquivalent = ""
+        alert.window.initialFirstResponder = keep
+        return alert
     }
 }

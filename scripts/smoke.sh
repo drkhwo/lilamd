@@ -59,7 +59,7 @@ if [ $BUILD -eq 0 ]; then
   rm -rf "$APP" && mkdir -p "$HOME/Applications" && ditto "$ROOT/build/release/Build/Products/Release/MD Editor.app" "$APP"
 fi
 if [ $BUILD -eq 0 ] && [ -x "$APP/Contents/MacOS/MD Editor" ]; then
-  result C1 pass "xcodebuild exit 0; installed $APP ($(defaults read "$APP/Contents/Info" CFBundleShortVersionString))"
+  result C1 pass "xcodebuild exit 0; installed $APP (version $(defaults read "$APP/Contents/Info" CFBundleShortVersionString), MDEGitCommit $(defaults read "$APP/Contents/Info" MDEGitCommit))"
 else
   result C1 fail "xcodebuild exit $BUILD, see $OUT/C1-build.log"; exit 1
 fi

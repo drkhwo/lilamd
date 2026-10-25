@@ -8,3 +8,5 @@ body.dark { background: #1d2125; }
 .vditor-ir pre.vditor-reset, .vditor-sv { padding: 24px 48px !important; }
 .vditor-sv, .vditor-sv * { font-family: ui-monospace, "SF Mono", Menlo, monospace !important; font-size: 13px; }
 .vditor-copy, .vditor-ir__preview .vditor-copy { display: none !important; }
+.vditor-ir .vditor-reset > h1:before, .vditor-ir .vditor-reset > h2:before, .vditor-ir .vditor-reset > h3:before,
+.vditor-ir .vditor-reset > h4:before, .vditor-ir .vditor-reset > h5:before, .vditor-ir .vditor-reset > h6:before { content: none !important; }

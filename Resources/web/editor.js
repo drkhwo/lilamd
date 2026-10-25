@@ -155,6 +155,27 @@
         sel.removeAllRanges(); sel.addRange(nr);
       }, true);
     }
+    // A caret directly in the editor root in front of a table (document start, Cmd+Up, initial focus)
+    // is drawn on an empty line that does not exist in the file. Put it into the first cell instead.
+    if (inner.ir) {
+      const root = inner.ir.element;
+      document.addEventListener("selectionchange", () => {
+        if (!vditor || vditor.vditor !== inner || inner.currentMode !== "ir") return;
+        const sel = getSelection();
+        if (!sel.rangeCount || !sel.isCollapsed) return;
+        const r = sel.getRangeAt(0);
+        if (r.startContainer !== root) return;
+        const block = root.childNodes[r.startOffset];
+        if (!block || block.nodeName !== "TABLE") return;
+        const cell = block.querySelector("th, td");
+        if (!cell) return;
+        const nr = document.createRange();
+        if (cell.firstChild && cell.firstChild.nodeType === 3) nr.setStart(cell.firstChild, 0); else nr.setStart(cell, 0);
+        nr.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(nr);
+      });
+    }
     const lute = inner.lute;
     // Warm up the JIT for the per-keystroke Lute path so the first keys are not slow.
     try { for (let i = 0; i < 30; i++) lute.SpinVditorIRDOM('<p data-block="0">warm *up* `x` [a](b)<wbr></p>'); } catch (e) {}

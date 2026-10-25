@@ -4,10 +4,17 @@ import SwiftUI
 struct MDEditorApp: App {
     @AppStorage(EditorModePreference.key) private var mode: EditorMode = .visual
 
+    /// ~1100×800 pt, but never larger than the visible area of the main screen.
+    static var defaultWindowSize: CGSize {
+        let visible = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1100, height: 800)
+        return CGSize(width: min(1100, visible.width - 40), height: min(800, visible.height - 40))
+    }
+
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
             DocumentWindow(document: file.$document, fileURL: file.fileURL)
         }
+        .defaultSize(Self.defaultWindowSize) // later sizes are remembered by the system (window restoration)
         .commands {
             CommandGroup(replacing: .undoRedo) {
                 Button("Undo") { EditorController.forKeyWindow()?.undo() }

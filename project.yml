@@ -33,6 +33,16 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    postBuildScripts:
+      - name: Stamp git commit into Info.plist
+        basedOnDependencyAnalysis: false
+        script: |
+          COMMIT="$(git -C "$SRCROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+          if [ -n "$(git -C "$SRCROOT" status --porcelain 2>/dev/null)" ]; then COMMIT="$COMMIT-dirty"; fi
+          PLIST="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+          /usr/libexec/PlistBuddy -c "Set :MDEGitCommit $COMMIT" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :MDEGitCommit string $COMMIT" "$PLIST"
+          echo "MDEGitCommit=$COMMIT"
     info:
       path: Info.plist
       properties:
