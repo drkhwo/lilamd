@@ -43,9 +43,9 @@ struct SourcePreserver {
     func merge(current: String) -> String {
         if current == baseline { return original }
         let currentLines = Self.splitLF(current)
-        let baselineToCurrent = Self.align(from: baselineLines, to: currentLines)
-        var currentToBaseline = [Int?](repeating: nil, count: currentLines.count)
-        for (b, c) in baselineToCurrent.enumerated() { if let c { currentToBaseline[c] = b } }
+        let currentToBaseline = Self.align(from: baselineLines, to: currentLines)
+        var baselineToCurrent = [Int?](repeating: nil, count: baselineLines.count)
+        for (c, b) in currentToBaseline.enumerated() { if let b { baselineToCurrent[b] = c } }
 
         // Anchors: baseline lines aligned both to the original and to the current text.
         var anchors: [(o: Int, b: Int, c: Int)] = []
@@ -100,8 +100,8 @@ struct SourcePreserver {
         var result = ""
         for (i, line) in out.enumerated() {
             result += line.content
+            // The last line never gets a terminator: a trailing newline is an empty last line.
             if i < out.count - 1 { result += line.terminator ?? lineEnding }
-            else if let t = line.terminator { result += t }
         }
         return result
     }

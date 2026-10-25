@@ -54,6 +54,8 @@
         speedUp(v);
         v.clearStack(); // record the loaded state as the first undo step right away
         hideEmojiHint(v);
+        const root = scroller();
+        if (root) root.focus({ preventScroll: true });
         if (scrollRatio) restoreScroll(scrollRatio);
         post({ type: "ready", baseline: v.getValue(), mode: mode });
       },
@@ -63,6 +65,7 @@
   // Vditor re-renders the whole outline (all headings through Lute) on every keystroke, even with the
   // outline panel disabled; only a [ToC] block needs it. And it converts the whole document to Markdown
   // synchronously inside some input events. Both are O(document) per key and make big files lag.
+  const PREVIEW_RE = /<pre class="vditor-ir__preview"[^>]*>[\s\S]*?<\/pre>/g;
   const LAZY = "\u0000mdedit-lazy\u0000";
   let inInputEvent = false;
   document.addEventListener("input", () => { inInputEvent = true; setTimeout(() => { inInputEvent = false; }, 0); }, true);
@@ -131,13 +134,40 @@
       if (!inner[m]) continue;
       inner[m].element.addEventListener("keydown", () => { if (!refreshedIdle) refreshUndoBase(); }, true);
     }
+    // Typing with the caret directly in the editor root (e.g. after Cmd+Down past a final code block)
+    // makes Vditor re-render the whole document through Lute on the next keystrokes (~1 s on big files).
+    // Give such text a paragraph of its own first.
+    if (inner.ir) {
+      const root = inner.ir.element;
+      root.addEventListener("keydown", (e) => {
+        if (e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1 || e.isComposing) return;
+        const sel = getSelection();
+        if (!sel.rangeCount || !sel.isCollapsed) return;
+        const r = sel.getRangeAt(0);
+        const n = r.startContainer;
+        if (n !== root && !(n.nodeType === 3 && n.parentNode === root)) return;
+        const p = document.createElement("p");
+        p.setAttribute("data-block", "0");
+        let text, offset = 0;
+        if (n.nodeType === 3) { root.insertBefore(p, n); p.appendChild(n); text = n; offset = r.startOffset; }
+        else { root.insertBefore(p, root.childNodes[r.startOffset] || null); text = document.createTextNode(""); p.appendChild(text); }
+        const nr = document.createRange(); nr.setStart(text, offset); nr.collapse(true);
+        sel.removeAllRanges(); sel.addRange(nr);
+      }, true);
+    }
     const lute = inner.lute;
     // Warm up the JIT for the per-keystroke Lute path so the first keys are not slow.
     try { for (let i = 0; i < 30; i++) lute.SpinVditorIRDOM('<p data-block="0">warm *up* `x` [a](b)<wbr></p>'); } catch (e) {}
     for (const name of ["VditorIRDOM2Md", "VditorSVDOM2Md"]) {
       const real = lute[name];
       if (typeof real !== "function") continue;
-      lute[name] = function (html) { return inInputEvent ? LAZY : real.call(lute, html); };
+      lute[name] = function (html) {
+        if (inInputEvent) return LAZY;
+        // Rendered code previews (highlighted copy + copy button) are not part of the Markdown; dropping
+        // them more than halves what Lute has to parse.
+        if (name === "VditorIRDOM2Md") html = html.replace(PREVIEW_RE, '<pre class="vditor-ir__preview" data-render="2"><code></code></pre>');
+        return real.call(lute, html);
+      };
     }
   }
 

@@ -64,6 +64,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     /// Replace the editor content with `newText` (external change, revert, menu undo).
     func load(text newText: String) {
         guard newText != text else { return }
+        log.info("editor reloaded: document changed outside the editor (\(newText.utf8.count) bytes)")
         text = newText
         preserver = nil
         guard isReady else { return }
@@ -134,6 +135,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             if let readyMode, readyMode != mode { return } // stale instance
             preserver = SourcePreserver(original: text, baseline: baseline)
             isReady = true
+            if let window = webView.window, window.firstResponder !== webView { window.makeFirstResponder(webView) }
+            log.info("editor ready, mode \(self.mode.rawValue, privacy: .public)")
             onReady?()
         case "input":
             guard let value = body["value"] as? String, let preserver else { return }

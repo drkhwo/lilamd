@@ -270,6 +270,18 @@ final class EditorTests: XCTestCase {
         }
     }
 
+    func testF2_editInsideCodeBlock() async throws {
+        let original = try Samples.text("sample.md")
+        h = try await EditorHarness(text: original)
+        try await h.focus()
+        try await h.select("let name: String", collapseToEnd: true)
+        try await h.insertText(" // edited")
+        try await h.waitForText { $0.contains("let name: String // edited") }
+        let diff = changedLineRange(original, h.controller.text)
+        XCTAssertEqual(diff.old, ["    let name: String"])
+        XCTAssertEqual(diff.new, ["    let name: String // edited"])
+    }
+
     private func assertOneWordEdit(_ name: String, after anchor: String, expectLine: String) async throws {
         let original = try Samples.text(name)
         h = try await EditorHarness(text: original)
