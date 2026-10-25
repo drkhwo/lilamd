@@ -72,16 +72,27 @@ struct SourcePreserver {
             let cRange = (prev.c + 1)..<anchor.c
             if Array(baselineLines[bRange]) == Array(currentLines[cRange]) {
                 emitOriginal(oRange)   // untouched region: keep the file's own text
-            } else if oRange.count == bRange.count {
-                // Same number of lines as the original block: the engine rewrote it line by line,
-                // so map lines by position and patch only what the user changed.
+            } else if let map = regionMap(oRange, bRange) {
+                // The engine rewrote this block line by line (maybe adding/removing blank lines), so
+                // map lines by position and patch only what the user changed.
                 for c in cRange {
                     let isLast = c == currentLines.count - 1
                     if let b = currentToBaseline[c], bRange.contains(b) {
-                        let o = oRange.lowerBound + (b - bRange.lowerBound)
-                        out.append((originalLines[o].content, originalLines[o].terminator))
-                    } else if let b = Self.positionalPartner(c, cRange: cRange, bRange: bRange, currentToBaseline: currentToBaseline) {
-                        let o = oRange.lowerBound + (b - bRange.lowerBound)
+                        // Unchanged line: the original spelling, or nothing if the engine invented it.
+                        if let o = map[b - bRange.lowerBound] {
+                            out.append((originalLines[o].content, originalLines[o].terminator))
+                        } else if isLast || cRange.count != bRange.count {
+                            // Keep an engine-added line when lines were inserted/removed around it (it may
+                            // now separate new content) and the final "" (= file ends with a newline).
+                            out.append((currentLines[c], isLast ? nil : lineEnding))
+                        }
+                    } else if cRange.count == bRange.count, let o = map[c - cRange.lowerBound] {
+                        let b = bRange.lowerBound + (c - cRange.lowerBound)
+                        if Self.layoutKey(baselineLines[b]) == Self.layoutKey(currentLines[c]) {
+                            // Only re-padded by the engine (e.g. a table whose column widths changed).
+                            out.append((originalLines[o].content, isLast ? nil : (originalLines[o].terminator ?? lineEnding)))
+                            continue
+                        }
                         let patched = Self.patchLine(original: originalLines[o].content, baseline: baselineLines[b], current: currentLines[c])
                         out.append((Substring(patched), isLast ? nil : (originalLines[o].terminator ?? lineEnding)))
                     } else {
@@ -133,6 +144,41 @@ struct SourcePreserver {
         }
         lines.append(Line(content: Substring(scalars[start..<scalars.endIndex]), terminator: nil))
         return lines
+    }
+
+    /// For each baseline line of a region, the original line it is a rewrite of (nil: the engine added
+    /// it). Works when both sides have the same number of non-blank lines (blank lines may differ).
+    private func regionMap(_ oRange: Range<Int>, _ bRange: Range<Int>) -> [Int?]? {
+        if oRange.count == bRange.count { return oRange.map { Optional($0) } }
+        let isBlank: (Substring) -> Bool = { $0.allSatisfy { $0 == " " || $0 == "\t" } }
+        let oText = oRange.filter { !isBlank(originalLines[$0].content) }
+        let bText = bRange.filter { !isBlank(baselineLines[$0]) }
+        guard oText.count == bText.count else { return nil }
+        var map = [Int?](repeating: nil, count: bRange.count)
+        for (o, b) in zip(oText, bText) { map[b - bRange.lowerBound] = o }
+        // Blank lines: pair them in order between consecutive text lines; extra ones stay unmapped.
+        let oBlank = oRange.filter { isBlank(originalLines[$0].content) }
+        var used = Set<Int>()
+        for b in bRange where isBlank(baselineLines[b]) {
+            let prevText = bText.last { $0 < b }.flatMap { map[$0 - bRange.lowerBound] } ?? (oRange.lowerBound - 1)
+            let nextText = bText.first { $0 > b }.flatMap { map[$0 - bRange.lowerBound] } ?? oRange.upperBound
+            if let o = oBlank.first(where: { $0 > prevText && $0 < nextText && !used.contains($0) }) {
+                map[b - bRange.lowerBound] = o
+                used.insert(o)
+            }
+        }
+        return map
+    }
+
+    /// A line with spacing and dash runs removed: equal keys mean "same content, different padding".
+    static func layoutKey(_ line: Substring) -> String {
+        var out = ""
+        var lastDash = false
+        for ch in line where ch != " " && ch != "\t" {
+            if ch == "-" { if lastDash { continue }; lastDash = true } else { lastDash = false }
+            out.append(ch)
+        }
+        return out
     }
 
     /// A changed current line whose neighbours are unchanged pairs with the baseline line at the same

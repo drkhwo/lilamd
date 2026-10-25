@@ -26,17 +26,18 @@ quit_app() {
 open_doc() { open -a "$APP" "$@"; sleep "${WAIT:-4}"; }
 front() { osascript -e "tell application id \"$BID\" to activate" >/dev/null 2>&1; open -a "$APP"; sleep 1.5; }
 window_id() { swift "$ROOT/scripts/windowid.swift" "MD Editor" 2>/dev/null | head -1; }
-shot() {  # shot <name>; waits until the window is full size (Stage Manager animates it in)
-  front
-  local wid="" info
-  for _ in $(seq 1 10); do
+shot() {  # shot <name>; retries while Stage Manager shows the window as a strip thumbnail
+  local wid="" info w=0
+  for _ in 1 2 3 4 5; do
+    front
+    osascript -e "tell application \"System Events\" to set frontmost of process \"MD Editor\" to true" >/dev/null 2>&1
+    sleep 1.5
     info="$(window_id)"; wid="${info%% *}"
-    [ -n "$info" ] && [ "${info##* }" -gt 400 ] && break
-    sleep 0.5
+    if [ -n "$wid" ]; then screencapture -x -o -l"$wid" "$OUT/$1.png"; else screencapture -x "$OUT/$1.png"; fi
+    w="$(sips -g pixelWidth "$OUT/$1.png" 2>/dev/null | awk '/pixelWidth/{print $2}')"
+    [ "${w:-0}" -gt 1000 ] && break
   done
-  sleep 0.5
-  if [ -n "$wid" ]; then screencapture -x -o -l"$wid" "$OUT/$1.png"; else screencapture -x "$OUT/$1.png"; fi
-  echo "$OUT/$1.png"
+  echo "$OUT/$1.png (${w:-?} px wide)"
 }
 keys() {  # keys <applescript body for System Events>; prints error text on failure
   osascript -e "tell application \"System Events\" to tell process \"MD Editor\"" -e "set frontmost to true" -e "$1" -e "end tell" 2>&1 >/dev/null

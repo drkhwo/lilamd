@@ -282,6 +282,32 @@ final class EditorTests: XCTestCase {
         XCTAssertEqual(diff.new, ["    let name: String // edited"])
     }
 
+    func testF2_tableCellEditTouchesOnlyThatRow() async throws {
+        let original = try Samples.text("sample.md")
+        h = try await EditorHarness(text: original)
+        try await h.focus()
+        try await h.select("second row", collapseToEnd: true)
+        try await h.insertText(" edited")
+        try await h.waitForText { $0.contains("edited") }
+        let diff = changedLineRange(original, h.controller.text)
+        XCTAssertEqual(diff.old, ["| beta  | 22    | second row  |"])
+        XCTAssertEqual(diff.new.count, 1)
+        XCTAssertTrue(diff.new.first?.contains("second row") == true && diff.new.first?.contains("edited") == true)
+    }
+
+    func testF2_newListItemAddsOnlyThatLine() async throws {
+        let original = try Samples.text("sample.md")
+        h = try await EditorHarness(text: original)
+        try await h.focus()
+        try await h.select("star item three", collapseToEnd: true)
+        try await h.key("\r", keyCode: 36)
+        try await h.insertText("star item four")
+        try await h.waitForText { $0.contains("star item four") }
+        let diff = changedLineRange(original, h.controller.text)
+        XCTAssertEqual(diff.old, [])
+        XCTAssertEqual(diff.new, ["* star item four"])
+    }
+
     private func assertOneWordEdit(_ name: String, after anchor: String, expectLine: String) async throws {
         let original = try Samples.text(name)
         h = try await EditorHarness(text: original)
