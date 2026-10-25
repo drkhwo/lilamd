@@ -21,6 +21,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     /// Every request the page made: scheme requests, blocked (CSP) requests, refused navigations.
     private(set) var requestLog: [String] = []
     private(set) var latencies: [Double] = []
+    /// Per-character editor work: from the moment the page sees the keydown to input handled (no queueing).
+    private(set) var processing: [Double] = []
     var onReady: (() -> Void)?
 
     init(text: String, mode: EditorMode, documentDirectory: URL?) {
@@ -151,6 +153,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         case "latency":
             if let ms = body["ms"] as? Double {
                 latencies.append(ms)
+                processing.append(ms - ((body["queued"] as? Double) ?? 0))
                 log.info("input latency \(ms, format: .fixed(precision: 1), privacy: .public) ms")
             }
         case "blocked":
