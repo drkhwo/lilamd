@@ -1,8 +1,8 @@
 #!/bin/bash
-# Makes "MD Editor" the default app for .md / .markdown (net.daringfireball.markdown).
+# Makes "LilaMD" the default app for .md / .markdown (net.daringfireball.markdown).
 # Changes a per-user Launch Services setting; macOS may ask for confirmation. Not run by smoke.sh.
 set -euo pipefail
-APP="${1:-$HOME/Applications/MD Editor.app}"
+APP="${1:-/Applications/LilaMD.app}"
 swift - "$APP" <<'SWIFT'
 import AppKit
 import UniformTypeIdentifiers

@@ -46,7 +46,7 @@ struct DocumentWindow: View {
             .frame(minWidth: 480, minHeight: 320)
             .onAppear {
                 // Test hook for screenshots (TESTS C8) without changing the system setting:
-                // `open -a "MD Editor" file.md --args -MDEditorAppearance dark`.
+                // `open -a "LilaMD" file.md --args -MDEditorAppearance dark`.
                 switch UserDefaults.standard.string(forKey: "MDEditorAppearance") {
                 case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
                 case "light": NSApp.appearance = NSAppearance(named: .aqua)

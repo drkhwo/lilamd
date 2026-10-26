@@ -17,7 +17,7 @@ enum MarkdownDocumentError: LocalizedError, Equatable {
     var failureReason: String? {
         switch self {
         case .notUTF8:
-            return "MD Editor only opens UTF-8 encoded Markdown. Convert the file to UTF-8 (for example with `iconv -f latin1 -t utf-8`) and open it again."
+            return "LilaMD only opens UTF-8 encoded Markdown. Convert the file to UTF-8 (for example with `iconv -f latin1 -t utf-8`) and open it again."
         }
     }
 }

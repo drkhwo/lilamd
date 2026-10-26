@@ -68,7 +68,7 @@ final class FileWatcher {
     static func makeConflictAlert(fileName: String) -> NSAlert {
         let alert = NSAlert()
         alert.messageText = "“\(fileName)” was changed by another app."
-        alert.informativeText = "You have unsaved changes in MD Editor. Reload the file from disk (your changes are lost) or keep your version (saving will ask before overwriting)?"
+        alert.informativeText = "You have unsaved changes in LilaMD. Reload the file from disk (your changes are lost) or keep your version (saving will ask before overwriting)?"
         let keep = alert.addButton(withTitle: "Keep My Version")
         let reload = alert.addButton(withTitle: "Reload from Disk")
         keep.keyEquivalent = "\r"

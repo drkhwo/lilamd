@@ -1,5 +1,5 @@
 #!/bin/bash
-# System smoke for MD Editor (TESTS.md section C, plus F1 through the real app).
+# System smoke for LilaMD (TESTS.md section C, plus F1 through the real app).
 # Usage: scripts/smoke.sh [output-dir]      (default: a new /tmp/mdeditor-smoke.XXXX)
 # Works on copies of samples/ in <output-dir>/work; samples/ is never touched.
 # Steps that need Accessibility (keystrokes via System Events) are reported "not verified" with the error.
@@ -10,27 +10,27 @@ mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 WORK="$OUT/work"
 rm -rf "$WORK" && mkdir -p "$WORK" && cp "$ROOT"/samples/* "$WORK"/
-APP="$HOME/Applications/MD Editor.app"
+APP="/Applications/LilaMD.app"
 BID="local.mdeditor.MDEditor"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 SUMMARY="$OUT/summary.txt"
 : > "$SUMMARY"
 
 result() { printf '%-4s %-13s %s\n' "$1" "$2" "$3" | tee -a "$SUMMARY"; }
-running() { pgrep -f "$APP/Contents/MacOS/MD Editor" >/dev/null; }
+running() { pgrep -f "$APP/Contents/MacOS/LilaMD" >/dev/null; }
 quit_app() {
   osascript -e "tell application id \"$BID\" to quit" >/dev/null 2>&1
   for _ in $(seq 1 50); do running || return 0; sleep 0.2; done
-  pkill -f "$APP/Contents/MacOS/MD Editor"; sleep 1
+  pkill -f "$APP/Contents/MacOS/LilaMD"; sleep 1
 }
 open_doc() { open -a "$APP" "$@"; sleep "${WAIT:-4}"; }
 front() { osascript -e "tell application id \"$BID\" to activate" >/dev/null 2>&1; open -a "$APP"; sleep 1.5; }
-window_id() { swift "$ROOT/scripts/windowid.swift" "MD Editor" 2>/dev/null | head -1; }
+window_id() { swift "$ROOT/scripts/windowid.swift" "LilaMD" 2>/dev/null | head -1; }
 shot() {  # shot <name>; retries while Stage Manager shows the window as a strip thumbnail
   local wid="" info w=0
   for _ in 1 2 3 4 5; do
     front
-    osascript -e "tell application \"System Events\" to set frontmost of process \"MD Editor\" to true" >/dev/null 2>&1
+    osascript -e "tell application \"System Events\" to set frontmost of process \"LilaMD\" to true" >/dev/null 2>&1
     sleep 1.5
     info="$(window_id)"; wid="${info%% *}"
     if [ -n "$wid" ]; then screencapture -x -o -l"$wid" "$OUT/$1.png"; else screencapture -x "$OUT/$1.png"; fi
@@ -40,7 +40,7 @@ shot() {  # shot <name>; retries while Stage Manager shows the window as a strip
   echo "$OUT/$1.png (${w:-?} px wide)"
 }
 keys() {  # keys <applescript body for System Events>; prints error text on failure
-  osascript -e "tell application \"System Events\" to tell process \"MD Editor\"" -e "set frontmost to true" -e "$1" -e "end tell" 2>&1 >/dev/null
+  osascript -e "tell application \"System Events\" to tell process \"LilaMD\"" -e "set frontmost to true" -e "$1" -e "end tell" 2>&1 >/dev/null
 }
 LOGPID=""
 # shellcheck disable=SC2317
@@ -56,9 +56,9 @@ echo "== C1 build" >&2
   > "$OUT/C1-build.log" 2>&1
 BUILD=$?
 if [ $BUILD -eq 0 ]; then
-  rm -rf "$APP" && mkdir -p "$HOME/Applications" && ditto "$ROOT/build/release/Build/Products/Release/MD Editor.app" "$APP"
+  rm -rf "$APP" && ditto "$ROOT/build/release/Build/Products/Release/LilaMD.app" "$APP"
 fi
-if [ $BUILD -eq 0 ] && [ -x "$APP/Contents/MacOS/MD Editor" ]; then
+if [ $BUILD -eq 0 ] && [ -x "$APP/Contents/MacOS/LilaMD" ]; then
   result C1 pass "xcodebuild exit 0; installed $APP (version $(defaults read "$APP/Contents/Info" CFBundleShortVersionString), MDEGitCommit $(defaults read "$APP/Contents/Info" MDEGitCommit))"
 else
   result C1 fail "xcodebuild exit $BUILD, see $OUT/C1-build.log"; exit 1
@@ -69,9 +69,9 @@ fi
 "$LSREGISTER" -dump > "$OUT/C2-lsregister.txt" 2>/dev/null
 BLOCK="$(awk -v p="$APP" '/^-----/{ if (index(b, p) && index(b, "bundle")) print b; b=""; next } { b = b "\n" $0 } END { if (index(b, p)) print b }' "$OUT/C2-lsregister.txt")"
 if printf '%s' "$BLOCK" | grep -q "net.daringfireball.markdown"; then
-  result C2 pass "lsregister -dump: MD Editor bundle claims net.daringfireball.markdown (Editor role)"
+  result C2 pass "lsregister -dump: LilaMD bundle claims net.daringfireball.markdown (Editor role)"
 else
-  result C2 fail "net.daringfireball.markdown not in MD Editor's lsregister block ($OUT/C2-lsregister.txt)"
+  result C2 fail "net.daringfireball.markdown not in LilaMD's lsregister block ($OUT/C2-lsregister.txt)"
 fi
 DEFAULT="$(swift -e 'import AppKit; import UniformTypeIdentifiers; print(NSWorkspace.shared.urlForApplication(toOpen: UTType(importedAs: "net.daringfireball.markdown"))?.path ?? "none")' 2>/dev/null)"
 echo "     info: current default app for .md: $DEFAULT" | tee -a "$SUMMARY"

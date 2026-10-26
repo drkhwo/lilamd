@@ -1,4 +1,4 @@
-# MD Editor
+# LilaMD
 
 Минимальный нативный редактор `.md` для macOS: открыл файл, видишь его отформатированным и правишь прямо
 в отформатированном виде (как Typora). SwiftUI `DocumentGroup` + один `WKWebView` с Vditor 3.11.2 в режиме IR.
@@ -13,12 +13,12 @@ xcodegen generate                # .xcodeproj генерируется из proj
 # тесты (XCTest, хост-приложение, реальный WKWebView)
 xcodegen generate && xcodebuild -project MDEditor.xcodeproj -scheme MDEditor -derivedDataPath build/dd test
 
-# смоук раздела C (+ F1 через настоящее приложение): Release-сборка, установка в ~/Applications, скриншоты
+# смоук раздела C (+ F1 через настоящее приложение): Release-сборка, установка в /Applications, скриншоты
 scripts/smoke.sh [папка-для-артефактов]      # по умолчанию /tmp/mdeditor-smoke.XXXX, итог в summary.txt
 
 # только сборка и установка
 xcodebuild -project MDEditor.xcodeproj -scheme MDEditor -configuration Release -derivedDataPath build/release build
-ditto "build/release/Build/Products/Release/MD Editor.app" "$HOME/Applications/MD Editor.app"
+ditto "build/release/Build/Products/Release/LilaMD.app" "/Applications/LilaMD.app"
 ```
 
 Зависимости JS лежат в `Resources/vditor/` (закоммичены, сеть для сборки не нужна). Перекачать ту же
@@ -26,11 +26,11 @@ ditto "build/release/Build/Products/Release/MD Editor.app" "$HOME/Applications/M
 
 ## Установка как приложения по умолчанию для `.md`
 
-1. Поставить `.app` в `~/Applications` (делает `scripts/smoke.sh` или команды выше).
-2. `scripts/set-default.sh` — назначает MD Editor обработчиком `net.daringfireball.markdown`
-   (то же самое руками: Finder → любой `.md` → Cmd+I → «Открывать в программе» → MD Editor → «Изменить все»).
+1. Поставить `.app` в `/Applications` (делает `scripts/smoke.sh` или команды выше).
+2. `scripts/set-default.sh` — назначает LilaMD обработчиком `net.daringfireball.markdown`
+   (то же самое руками: Finder → любой `.md` → Cmd+I → «Открывать в программе» → LilaMD → «Изменить все»).
    Скрипт меняет пользовательскую настройку Launch Services, поэтому ни тесты, ни смоук его не запускают.
-3. Проверить: `open -a "MD Editor" file.md` или двойной клик.
+3. Проверить: `open -a "LilaMD" file.md` или двойной клик.
 
 ## Как устроено
 
@@ -83,7 +83,7 @@ ditto "build/release/Build/Products/Release/MD Editor.app" "$HOME/Applications/M
   которая стоит первой в файле, — это делается в режиме «Исходник» (Cmd+2).
 - **Хэш коммита в сборке**: `MDEGitCommit` в `Info.plist` ставит build-фаза (`git rev-parse --short HEAD`,
   с суффиксом `-dirty`, если дерево не чистое). Проверить установленную сборку:
-  `defaults read "$HOME/Applications/MD Editor.app/Contents/Info" MDEGitCommit`.
+  `defaults read "/Applications/LilaMD.app/Contents/Info" MDEGitCommit`.
 - **Тема** — по `NSApp.effectiveAppearance`, переключается на лету. Для скриншота C8 без смены системной
   настройки есть аргумент запуска `-MDEditorAppearance dark` (только для проверки).
 - **Внешние изменения файла (C7).** Свой наблюдатель за файлом: если в окне нет несохранённых правок —
