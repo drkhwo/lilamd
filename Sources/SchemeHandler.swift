@@ -2,7 +2,7 @@ import WebKit
 import UniformTypeIdentifiers
 import os
 
-let log = Logger(subsystem: "local.mdeditor", category: "editor")
+let log = Logger(subsystem: "com.drkhwo.lilamd", category: "editor")
 
 /// Serves `mdedit://app/<path>` from the app bundle and `mdedit://doc/<path>` from the folder of the
 /// open document (relative images). Nothing else is reachable; every request is logged.

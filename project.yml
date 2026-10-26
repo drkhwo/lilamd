@@ -1,6 +1,6 @@
 name: MDEditor
 options:
-  bundleIdPrefix: local.mdeditor
+  bundleIdPrefix: com.drkhwo
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -29,11 +29,11 @@ targets:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_NAME: "LilaMD"
-        PRODUCT_BUNDLE_IDENTIFIER: local.mdeditor.MDEditor
+        PRODUCT_BUNDLE_IDENTIFIER: com.drkhwo.lilamd
         PRODUCT_MODULE_NAME: MDEditor
         ENABLE_APP_SANDBOX: NO
         GENERATE_INFOPLIST_FILE: NO
-        MARKETING_VERSION: "0.5.0"
+        MARKETING_VERSION: "0.5.1"
         CURRENT_PROJECT_VERSION: "1"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         INFOPLIST_PREPROCESS: YES
@@ -87,7 +87,7 @@ targets:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/LilaMD.app/Contents/MacOS/LilaMD"
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: local.mdeditor.MDEditorTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.drkhwo.lilamd.tests
         MDEDITOR_SAMPLES: "$(SRCROOT)/samples"
 schemes:
   MDEditor:

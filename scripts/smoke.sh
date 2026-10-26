@@ -11,7 +11,7 @@ OUT="$(cd "$OUT" && pwd)"
 WORK="$OUT/work"
 rm -rf "$WORK" && mkdir -p "$WORK" && cp "$ROOT"/samples/* "$WORK"/
 APP="/Applications/LilaMD.app"
-BID="local.mdeditor.MDEditor"
+BID="com.drkhwo.lilamd"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 SUMMARY="$OUT/summary.txt"
 : > "$SUMMARY"
@@ -44,7 +44,7 @@ keys() {  # keys <applescript body for System Events>; prints error text on fail
 }
 LOGPID=""
 # shellcheck disable=SC2317
-log_start() { log stream --level info --style compact --predicate 'subsystem == "local.mdeditor"' > "$OUT/$1.log" 2>&1 & LOGPID=$!; sleep 1.5; }
+log_start() { log stream --level info --style compact --predicate 'subsystem == "com.drkhwo.lilamd"' > "$OUT/$1.log" 2>&1 & LOGPID=$!; sleep 1.5; }
 log_stop() { [ -n "$LOGPID" ] && { kill "$LOGPID" 2>/dev/null; wait "$LOGPID" 2>/dev/null; }; LOGPID=""; }
 
 quit_app
