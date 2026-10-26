@@ -1,206 +1,101 @@
 # LilaMD
 
-Минимальный нативный редактор `.md` для macOS: открыл файл, видишь его отформатированным и правишь прямо
-в отформатированном виде (как Typora). SwiftUI `DocumentGroup` + один `WKWebView` с Vditor 3.11.2 в режиме IR.
+<img src="Resources/Assets.xcassets/AppIcon.appiconset/icon_256.png" width="128" align="right" alt="LilaMD icon">
 
-## Команды
+A small native Markdown editor for macOS. Open a `.md` file, see it formatted, and edit it right in the
+formatted view — the Markdown markers of a block appear only while the cursor is in it (like Typora).
+
+LilaMD does one thing: it opens Markdown files and edits them. It has no vault, no plugins, no sidebar and no settings.
+
+**Version 0.5** — an early release. It works for everyday notes and docs. Read the
+[known limitations](#known-limitations) before you use it on files that matter.
+
+## Features
+
+- **Visual mode** (Cmd+1, default): edit in the formatted view. Typing `## ` makes a heading, `- ` a list,
+  `> ` a quote, ```` ``` ```` a code block. Cmd+B / Cmd+I / Cmd+K, Cmd+Z / Cmd+Shift+Z.
+- **Source mode** (Cmd+2): plain Markdown in a monospaced font.
+- GitHub-flavored Markdown: tables, task lists (click to check), code with syntax highlighting, links,
+  images next to the file.
+- **Faithful to your file**: opening and closing a file does not rewrite it. Editing one paragraph changes
+  only that paragraph on disk — untouched blocks keep their original bytes.
+- Double-click a `.md` in Finder, Cmd+S, autosave, Open Recent — the standard macOS document behavior.
+- Picks up changes made to the file by other apps. When you have unsaved edits, it asks before it reloads.
+- Light and dark mode follow the system. Works fully offline.
+
+## Install
+
+Requirements: macOS 14 (Sonoma) or later, Apple Silicon or Intel.
+
+### One-line installer (recommended)
 
 ```bash
-cd ~/dev/md-editor
-brew install xcodegen            # один раз
-xcodegen generate                # .xcodeproj генерируется из project.yml, в git его нет
-
-# тесты (XCTest, хост-приложение, реальный WKWebView)
-xcodegen generate && xcodebuild -project MDEditor.xcodeproj -scheme MDEditor -derivedDataPath build/dd test
-
-# смоук раздела C (+ F1 через настоящее приложение): Release-сборка, установка в /Applications, скриншоты
-scripts/smoke.sh [папка-для-артефактов]      # по умолчанию /tmp/mdeditor-smoke.XXXX, итог в summary.txt
-
-# только сборка и установка
-xcodebuild -project MDEditor.xcodeproj -scheme MDEditor -configuration Release -derivedDataPath build/release build
-ditto "build/release/Build/Products/Release/LilaMD.app" "/Applications/LilaMD.app"
+curl -fsSL https://raw.githubusercontent.com/drkhwo/lilamd/main/install.sh | bash
 ```
 
-Зависимости JS лежат в `Resources/vditor/` (закоммичены, сеть для сборки не нужна). Перекачать ту же
-версию: `scripts/fetch-vditor.sh` (единственное место, где нужна сеть).
+The script downloads the latest release to `/Applications` (or to `~/Applications` if `/Applications` is not
+writable). Run it again to update.
 
-## Установка как приложения по умолчанию для `.md`
+### DMG
 
-1. Поставить `.app` в `/Applications` (делает `scripts/smoke.sh` или команды выше).
-2. `scripts/set-default.sh` — назначает LilaMD обработчиком `net.daringfireball.markdown`
-   (то же самое руками: Finder → любой `.md` → Cmd+I → «Открывать в программе» → LilaMD → «Изменить все»).
-   Скрипт меняет пользовательскую настройку Launch Services, поэтому ни тесты, ни смоук его не запускают.
-3. Проверить: `open -a "LilaMD" file.md` или двойной клик.
+1. Download `LilaMD.dmg` from [Releases](https://github.com/drkhwo/lilamd/releases/latest).
+2. Open it and drag **LilaMD** to **Applications**.
+3. The app is not notarized by Apple, so the first launch is blocked. To allow it:
+   - Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to LilaMD.
+   - Or run in Terminal: `xattr -dr com.apple.quarantine /Applications/LilaMD.app`
 
-## Как устроено
+### Make LilaMD the default app for `.md`
 
-- `Sources/MarkdownDocument.swift` — `FileDocument`, тип `net.daringfireball.markdown` (`UTType(importedAs:)`),
-  хранит текст файла как есть (CRLF и BOM сохраняются), не-UTF-8 → понятная ошибка.
-- `Sources/EditorController.swift` — `WKWebView`, мост Swift ↔ JS, навигация запрещена, ссылки наружу.
-- `Sources/SchemeHandler.swift` — `mdedit://app/...` (ресурсы бандла) и `mdedit://doc/...` (папка документа).
-- `Sources/SourcePreserver.swift` — сохранение исходного текста нетронутых блоков (см. «Верность исходнику»).
-- `Sources/FileWatcher.swift` — подхват изменений файла другими программами.
-- `Resources/web/` — страница, CSS, `editor.js` (настройка Vditor и обходы его проблем).
-- `Tests/` — XCTest: документ (A), редактор на реальном WKWebView (B, F), алгоритм сохранения исходника.
-- `scripts/smoke.sh` — раздел C через настоящее приложение (`open -a`, System Events, `log stream`, `screencapture`).
+In Finder, select any `.md` file and press **Cmd+I**. Under **Open with**, choose **LilaMD**, then click
+**Change All…**.
 
-## Решения
+## Usage
 
-- **Vditor 3.11.2, не 4.x.** 3.11.2 — последняя 3.x старше двух недель с известным API; 4.0 вышла в августе
-  2026, её API я не проверял. Весь `dist` (22 МБ, с katex/mermaid и т. п.) лежит в бандле, чтобы любая ленивая
-  подгрузка Vditor шла локально. Milkdown не понадобился: Vditor офлайн взлетел.
-- **Тулбар Vditor спрятан**, но оставлен в DOM с пятью кнопками (bold, italic, link, undo, redo): Vditor
-  обрабатывает Cmd+B/I/K/Z только через кнопки тулбара. Видимого UI кроме переключателя режимов нет:
-  счётчик, outline, подсказка эмодзи по `:`, кнопка «копировать» у блоков кода отключены/скрыты.
-- **Верность исходнику делается в Swift, а не в Vditor.** При загрузке запоминается пара «исходный текст /
-  что вернул `getValue()`». Каждое изменение сравнивается построчно (LCS): где строка редактора совпадает с
-  тем, что Vditor вернул при загрузке, в файл идёт исходная строка; где пользователь что-то поменял — строка
-  редактора, а если блок только переформатирован (переставлены отступы/выравнивание таблицы) — исходная
-  строка с вклеенной правкой. Подробности и что всё же меняется — ниже.
-- **При открытии документ не помечается изменённым**: текст в документ пишется только когда результат
-  слияния отличается от текста файла. Открыл/закрыл — файл не пишется.
-- **Undo/Redo.** Cmd+Z до страницы не доходит: его забирает пункт меню Edit → Undo (проверено тестом).
-  Поэтому пункты Undo/Redo заменены своими, они вызывают историю Vditor. Если откатить правки до исходного
-  текста, в файл возвращаются исходные байты.
-- **Режим «Исходник»** — Vditor `sv` без превью, моноширинный шрифт. Режим общий для всех окон,
-  хранится в `@AppStorage("editorMode")`, по умолчанию «Визуальный». Переключение пересоздаёт Vditor с тем же
-  текстом и той же относительной прокруткой.
-- **Сеть.** CSP страницы разрешает только `mdedit:`/`data:`/`blob:`; заблокированные попытки логируются
-  (`blocked ...`), все запросы схемы тоже. Навигация WebView запрещена, новые окна запрещены.
-- **Ссылки**: обычный клик ставит курсор, Cmd+клик (в визуальном режиме) → `NSWorkspace.open` для
-  `http/https/mailto`.
-- **HTML в markdown не исполняется**: `sanitize: true`, плюс CSP без внешних источников.
-- **Окно** открывается 1100×800 pt (меньше, если не помещается в видимую область экрана) — `defaultSize`
-  сцены. Своего запоминания размера нет: размер и положение восстанавливает система (восстановление окон),
-  и только если в «Системных настройках → Рабочий стол и Dock» выключено «Закрывать окна при завершении
-  приложения». На этой машине оно включено, поэтому после перезапуска окно снова 1100×800; с
-  `-NSQuitAlwaysKeepsWindows YES` размер 900×600 восстановился (проверено).
-- **Заголовки** в визуальном режиме без серых меток `H1`/`H2` слева (CSS в `editor.css`).
-- **Документ, начинающийся с таблицы**: каретка, оказавшаяся перед таблицей (при открытии), переносится
-  в первую ячейку. Строку над таблицей создавал сам Vditor: на ↑ / Cmd+↑ / ← в первой ячейке таблицы, перед
-  которой ничего нет, он вставляет пустой абзац. Для такой таблицы этот обработчик Vditor отключён,
-  работает обычное перемещение каретки. Следствие: в визуальном режиме нельзя начать текст над таблицей,
-  которая стоит первой в файле, — это делается в режиме «Исходник» (Cmd+2).
-- **Хэш коммита в сборке**: `MDEGitCommit` в `Info.plist` ставит build-фаза (`git rev-parse --short HEAD`,
-  с суффиксом `-dirty`, если дерево не чистое). Проверить установленную сборку:
-  `defaults read "/Applications/LilaMD.app/Contents/Info" MDEGitCommit`.
-- **Тема** — по `NSApp.effectiveAppearance`, переключается на лету. Для скриншота C8 без смены системной
-  настройки есть аргумент запуска `-MDEditorAppearance dark` (только для проверки).
-- **Внешние изменения файла (C7).** Свой наблюдатель за файлом: если в окне нет несохранённых правок —
-  документ перечитывается; если есть — sheet «Keep My Version / Reload from Disk». Кнопка по умолчанию
-  (Return) и фокус клавиатуры (Пробел) — на «Keep My Version»; «Reload from Disk», которая выбрасывает
-  правки, срабатывает только кликом. Своё автосохранение от чужой правки отличается сравнением байтов.
-- **Ускорения для больших файлов** (`editor.js`, все с комментариями): Vditor на каждую клавишу
-  перерисовывал outline всего документа, CSS-правило `pre.vditor-reset:empty::before` заставляло WebKit
-  пересчитывать стили всех блоков, а первый снимок undo делался до подсветки кода, из-за чего первый diff
-  занимал ~2 с. Это убрано; конвертация всего документа в markdown откладывается до паузы в наборе
-  (150 мс, для файлов > 2000 строк — 800 мс). User agent дополнен токеном `Safari`, чтобы Vditor шёл по
-  своим WebKit-веткам. Inline-предсказания текста (`allowsInlinePredictions`) выключены.
-- **App Sandbox выключен, подпись ad-hoc**, `webView.isInspectable = true` в Debug.
-- Swift 6 language mode, macOS 14+.
+| Action | Keys |
+|---|---|
+| Visual mode / Source mode | Cmd+1 / Cmd+2 |
+| Bold / Italic / Link | Cmd+B / Cmd+I / Cmd+K |
+| Undo / Redo | Cmd+Z / Cmd+Shift+Z |
+| Add a table row | Cmd+= (cursor in a table) |
+| Open a link | Cmd+click (Visual mode) |
+| Save | Cmd+S (autosave is on) |
 
-## Известные ограничения
+## Known limitations
 
-### Верность исходнику
+- **Tables.** When you change a cell or add a row, only that row changes on disk, but its column padding
+  can shift. When you delete a row, or add a row and then edit a cell in the same session, the whole table
+  is re-aligned (`|---|` becomes `| --- |`).
+- **New lines you type** use the editor's formatting. For example, a new task item is written as `- [ ] item`.
+- **A table at the very top of a file**: in Visual mode you cannot add text above it. Use Source mode (Cmd+2).
+- **Headings**: if you select from the start of a heading line, the selection includes the hidden `# `.
+  Typing over the selection turns the heading into a paragraph.
+- **Large files** (thousands of lines): typing can stall for 0.2–2 s in the first 5–10 s after the file
+  opens. After that, typing takes about 25–50 ms per key.
+- Files must be UTF-8.
 
-Что Lute (движок Vditor) переписывает при `getValue()` в нетронутых блоках `samples/sample.md` — это **не
-попадает в файл**, пока блок не трогали (тесты `testF1_*`, `testF2_*`, `testF4_reportNormalizations`):
+## Build from source
 
-| Что | В файле | Что вернул бы Vditor |
-|---|---|---|
-| пункт задачи | `- [ ] open task` | `- [ ]  open task` (два пробела) |
-| отмеченная задача | `- [x] done task` | `- [X]  done task` |
-| пустая строка перед таблицей | одна | две |
-| таблица | `\|-------\|------:\|:-----------:\|`<br>`\| alpha \| 1     \| first row   \|` | `\| ----- \| ----: \| :--------: \|`<br>`\| alpha \|     1 \| first row \|` |
-| `*`-маркеры, `\*`, вложенные списки, цитаты, код, кириллица, эмодзи, CRLF | — | не меняются |
-| `big.md`: последняя пустая строка файла | есть | удаляется |
+```bash
+brew install xcodegen
+git clone https://github.com/drkhwo/lilamd.git && cd lilamd
+xcodegen generate
+xcodebuild -project MDEditor.xcodeproj -scheme MDEditor -configuration Release -derivedDataPath build/release build
+ditto build/release/Build/Products/Release/LilaMD.app /Applications/LilaMD.app
+```
 
-Что **всё же меняется** при правке (проверено тестами и в `scripts/smoke.sh`):
+- Tests: `xcodebuild -project MDEditor.xcodeproj -scheme MDEditor -derivedDataPath build/dd test`
+- Release packages (universal zip and dmg): `scripts/package.sh` → `dist/`
+- Design notes and the full test record (in Russian): [docs/DEVELOPMENT.ru.md](docs/DEVELOPMENT.ru.md)
 
-1. **Таблицы** (перепроверено круг 2, таблица из `runs/round-1/critic/tblrow.orig`, правки через UI в XCTest):
-   - правка ячейки (в т. ч. заголовка) меняет только эту строку; отступы внутри неё могут сдвинуться:
-     `| Name  | Value | Note        |` → `| 9Name | Value | Note        |`,
-     `| Name  | Value | Note        |` → `| Name  | Value | Notes   |`,
-     `| alpha | 1     | first row   |` → `| alphaX | 1     | first row   |`;
-   - добавление пустой строки (Cmd+=) добавляет только её: `|       |       |            |` (до круга 3
-     к ней добавлялась ещё пустая строка над таблицей, если таблице предшествовала пустая строка — Lute
-     ставит перед таблицей две, и лишняя попадала в файл; исправлено);
-   - **если число строк таблицы изменилось (добавлена или удалена строка) и в той же сессии правится любая
-     ячейка этой таблицы — или строка удалена (Cmd+−)**, таблица целиком пишется в форме Lute:
-     `|-------|------:|:-----------:|` → `| ----- | ----: | :-----------: |`, колонки перевыравниваются
-     (`| Note        |` → `|     Note     |` — выравнивание по центру из строки-разделителя). Пример
-     критика (`tblrow.md`: правка заголовка + новая строка) — это как раз такой случай. Остальные блоки файла
-     не меняются. «Сессия» — с момента открытия файла: сравнение идёт с тем, что было при открытии.
-   - Enter внутри ячейки вставляет `<br />` в ту же строку таблицы (так делает Vditor).
-2. То же правило для других блоков: если в блоке меняется число непустых строк так, что старые и новые
-   строки не сопоставить, блок пишется в форме Lute (для задач — `- [ ]  ` с двумя пробелами; отметку `[X]`
-   я пишу как `[x]`).
-3. Новые строки, которые набрал пользователь, — в форме Lute (например, новый пункт задачи `- [ ] new task`).
-4. Новые строки получают преобладающий в файле перевод строки (CRLF/LF). У однострочного файла без перевода
-   строки — LF.
-5. Если правка касается последней строки файла без завершающего `\n`, после неё может появиться `\n`.
-6. Если отредактировать и откатить (Cmd+Z) до исходного текста, окно остаётся помеченным как изменённое
-   и автосохранение перезапишет файл **теми же байтами** (mtime изменится, содержимое — нет).
+## How it works
 
-### Производительность (`big.md`, 6000 строк, 500 блоков кода)
+LilaMD is a SwiftUI `DocumentGroup` app with one `WKWebView` per window. The web view runs
+[Vditor](https://github.com/Vanessa219/vditor) 3.11.2 in instant-rendering mode. Vditor and all its
+resources are bundled, and the page cannot reach the network. A Swift layer
+(`Sources/SourcePreserver.swift`) compares each edit with the text loaded from disk. It writes back the
+original bytes of every line you did not change.
 
-- Обычный набор — ~30 мс на символ (тест `testC6_*`, смоук C6: медиана 31, максимум 54 мс при 8 симв/с).
-- После каждой паузы в наборе ≥ 0,8 с весь документ конвертируется в markdown (~0,2–0,35 с) и пишется снимок
-  undo; клавиша, нажатая в этот момент, ждёт до ~0,4 с.
-- Первая установка курсора после открытия и прыжки в далёкие места документа (Cmd+↓) стоят WebKit от 0,3
-  до 1–3 с один раз. Внутрь кода WebKit я не лез; на маленьких файлах этого нет.
-- В XCTest-прогоне C6 (фоновое хост-приложение тестов) бывают одиночные задержки 0,2–1,7 с, за которыми
-  выстраиваются следующие клавиши. В настоящем приложении (смоук C6, набор через System Events) за пять
-  прогонов максимум был 46–56 мс. Поэтому тест проверяет работу редактора на символ (от keydown в странице
-  до обработанного input, без очереди; < 100 мс), а полную задержку печатает. Полную задержку < 100 мс
-  проверяет `scripts/smoke.sh` C6.
+## License
 
-### Прочее
-
-- При переключении Визуальный ↔ Исходник позиция курсора не сохраняется (сохраняется прокрутка).
-- Cmd+клик по ссылке работает только в визуальном режиме.
-- Ввод через System Events в смоуке — только цифрами и кодами клавиш: при раскладке RussianWin `keystroke
-  "smoke line"` печатает мусор. Это особенность раскладки на этой машине, а не редактора.
-- В заголовке маркер `# ` виден, пока каретка в заголовке (так работает режим IR Vditor), и Cmd+← ставит
-  каретку перед ним. Выделение Shift+Option+→ от начала строки захватывает `# `, и набор поверх превращает
-  заголовок в абзац. Это поведение Vditor, я его не менял; видно на экране (маркер выделен вместе со словом).
-- Наблюдение тестировщика «первые клавиши после свежего запуска не дошли» (2 раза) я не воспроизвёл: 7 запусков
-  (`pkill`, `open -a`, ввод через 0,5–5 с) — ввод дошёл во всех. На всякий случай фокус в редактор теперь
-  ставится повторно, пока web view не окажется в окне (раньше — один раз в момент готовности страницы).
-- Формулы/диаграммы (вне scope) Vditor рендерит из локальных файлов; я их не проверял.
-- Синхронный XHR из Vditor к `mdedit://` не поддерживается WebKit (`loadResourceSynchronously` в логе) —
-  из-за этого не грузится только набор иконок тулбара, который всё равно скрыт.
-
-## Что проверено, что нет
-
-Проверено (последний прогон перед коммитом):
-- `xcodebuild test`: 48 тестов, 48 прошли — A1–A7, B1–B10, тема, моноширинный Исходник, F1–F4 (включая
-  правку в таблице, в коде, новый пункт списка, CRLF, кириллицу), алгоритм сохранения исходника (в т. ч.
-  500 случайных правок), C6-замер; круг 2 (`Round2Tests`): диалог конфликта, размер окна, таблица в
-  начале документа, отсутствие меток H1/H2; круг 3 (`Round3Tests`): таблица в начале + Cmd+↑/↑/← + ввод
-  через настоящие `NSEvent` (на коде круга 2 все три падали: `7` над таблицей), Cmd+= после пустой строки
-  и после заголовка (на коде круга 2 падал: лишняя пустая строка).
-- Круг 2 в настоящем приложении (System Events): в диалоге конфликта фокус-кольцо на «Keep My Version»,
-  Return оставил правку в окне (`Para.9`), файл не перезаписан; окно 1100×800; Cmd+↑ + ввод в документе
-  с таблицей в начале до исправления давали строку `7` над таблицей — воспроизведено, исправлено, проверено
-  тестом.
-- Круг 3 в настоящем приложении, раскладка U.S. (потом возвращена RussianWin), сценарии тестировщика:
-  таблица в начале, Cmd+↑, задержка 0,5 / 0,6 / 2,0 с, «7», Cmd+S → diff только `| 7Name | Value | Note        |`;
-  Cmd+= на `T4.orig.md` и `T4b.orig.md` → diff только новая строка `|       |       |            |`.
-- `scripts/smoke.sh`: C1 pass, C2 pass, F1 pass (sha256 и mtime те же), C3/C4/C7/C8 — скриншоты, C5 pass,
-  C6 pass, C7 pass.
-
-Не проверено:
-- Двойной клик в Finder (ACCEPTANCE 1): приложение по умолчанию для `.md` на этой машине — BBEdit, я его
-  не менял (`scripts/set-default.sh` не запускал).
-- Тёмная тема при переключении **системной** настройки: проверял через `NSApp.appearance` (тест) и аргумент
-  `-MDEditorAppearance dark` (смоук).
-- Настоящий Cmd+клик мышью (тест кликает синтетическим `MouseEvent` с `metaKey`) и Cmd+B/I с настоящей
-  клавиатуры (тест шлёт `NSEvent` через `NSApp.sendEvent`, это тот же путь через меню, но не HID).
-- Ввод через IME/русскую раскладку с настоящей клавиатуры.
-- Сохранение под другим именем, файлы на сетевых дисках, файлы больше 6000 строк.
-- Return в диалоге конфликта в XCTest проверен только структурно (кнопка по умолчанию = Keep): фоновое
-  хост-приложение тестов не доставляет Return в sheet. Пробел проверен нажатием, Return — вручную в
-  приложении (см. выше).
-- Восстановление размера окна при выключенном «Закрывать окна при завершении» системной настройкой
-  (проверял флагом запуска, системную настройку не трогал).
+MIT — see [LICENSE](LICENSE). Bundled Vditor is MIT-licensed — see
+[Resources/vditor/LICENSE](Resources/vditor/LICENSE).
