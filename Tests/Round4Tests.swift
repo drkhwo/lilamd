@@ -294,15 +294,33 @@ final class Round4Tests: XCTestCase {
         let styles = try await h!.js("""
         const td = document.querySelector('.vditor-ir table td');
         const th = document.querySelector('.vditor-ir table th');
-        const pick = e => { const s = getComputedStyle(e); return { whiteSpace: s.whiteSpace, overflowWrap: s.overflowWrap, minWidth: s.minWidth }; };
+        const pick = e => { const s = getComputedStyle(e); return { whiteSpace: s.whiteSpace, overflowWrap: s.overflowWrap, minWidth: s.minWidth, maxWidth: s.maxWidth, boxSizing: s.boxSizing }; };
         return { td: pick(td), th: pick(th), em: parseFloat(getComputedStyle(td).fontSize) * 4 };
         """) as! [String: Any]
         for key in ["td", "th"] {
             let cell = styles[key] as! [String: String]
             XCTAssertEqual(cell["whiteSpace"], "normal")
-            XCTAssertEqual(cell["overflowWrap"], "anywhere")
+            XCTAssertEqual(cell["overflowWrap"], "break-word")
+            XCTAssertEqual(cell["boxSizing"], "border-box")
+            XCTAssertEqual(Double(cell["maxWidth"]!.replacingOccurrences(of: "px", with: ""))!, (styles["em"] as! Double) * 6, accuracy: 1, "max-width must be 24em")
             XCTAssertEqual(Double(cell["minWidth"]!.replacingOccurrences(of: "px", with: ""))!, (styles["em"] as! Double), accuracy: 1)
         }
+    }
+
+    /// T-1 / round-1 blocker: `overflow-wrap: anywhere` shrinks min-content, so ordinary words are torn when columns are squeezed.
+    /// Eight 20-letter words do not fit in 900 pt. With `break-word` the table scrolls and every word stays on one line.
+    func testT1_ordinaryWordsAreNotBrokenInSqueezedColumns() async throws {
+        let cells = Array(repeating: "Internationalization", count: 8)
+        let text = "| " + cells.joined(separator: " | ") + " |\n|" + String(repeating: "---|", count: 8) + "\n| " + cells.joined(separator: " | ") + " |\n"
+        h = try await EditorHarness(text: text)
+        let r = try await h!.js("""
+        const t=document.querySelector('.vditor-ir table');
+        const lines = c => { const g=document.createRange(); g.selectNodeContents(c);
+          return new Set(Array.from(g.getClientRects()).map(x=>Math.round(x.top))).size; };
+        return {lines:Array.from(t.rows).flatMap(r=>Array.from(r.cells).map(lines))};
+        """) as! [String: [Double]]
+        XCTAssertEqual(r["lines"]!.count, 16)
+        XCTAssertTrue(r["lines"]!.allSatisfy { $0 == 1 }, "ordinary word was broken: \(r)")
     }
 
     func testT2_longParagraphFitsEditor() async throws {
@@ -325,24 +343,61 @@ final class Round4Tests: XCTestCase {
         let r = try await h!.js("const t=document.querySelectorAll('.vditor-ir table')[1]; return {sw:t.scrollWidth,cw:t.clientWidth,head:t.rows[0].cells[1].getBoundingClientRect().height,cell:t.rows[1].cells[1].getBoundingClientRect().height}") as! [String: Double]
         XCTAssertLessThanOrEqual(r["sw"]!, r["cw"]!, "no sideways scroll for a 120-char URL: \(r)")
         XCTAssertGreaterThan(r["cell"]!, r["head"]! * 1.5, "URL must break into several lines: \(r)")
+        let w = try await h!.js("const t=document.querySelectorAll('.vditor-ir table')[1]; const td=t.rows[1].cells[1]; return {w:td.getBoundingClientRect().width, em:parseFloat(getComputedStyle(td).fontSize)*24}") as! [String: Double]
+        XCTAssertLessThanOrEqual(w["w"]!, w["em"]! + 1, "URL column is capped at 24em: \(w)")
     }
 
+    /// Border-box keeps the 12-column table within the editor; a generated 24-column table exercises fallback scrolling.
     func testT5_wideTableRetainsFallbackScrolling() async throws {
         h = try await EditorHarness(text: try Samples.text("wide-table.md"))
         let values = try await h!.js("""
         const t=document.querySelectorAll('.vditor-ir table')[2];
+        if (t.rows[0].cells.length !== 12) throw new Error('not table (c)');
         const s=getComputedStyle(t);
         const em=parseFloat(getComputedStyle(t.rows[0].cells[0]).fontSize)*4;
         return {display:s.display,overflowX:s.overflowX,scrollWidth:t.scrollWidth,clientWidth:t.clientWidth,
-          em,widths:Array.from(t.rows[0].cells).map(cell=>cell.getBoundingClientRect().width)};
+          em,widths:Array.from(t.rows[0].cells).map(cell=>cell.getBoundingClientRect().width),
+          boxSizing:getComputedStyle(t.rows[0].cells[0]).boxSizing,
+          lastRight:t.rows[0].cells[t.rows[0].cells.length-1].getBoundingClientRect().right,
+          tableRight:t.getBoundingClientRect().right,
+          cellsSum:Array.from(t.rows[0].cells).reduce((a,c)=>a+c.getBoundingClientRect().width,0)};
         """) as! [String: Any]
         XCTAssertEqual(values["display"] as? String, "block")
         XCTAssertEqual(values["overflowX"] as? String, "auto")
-        XCTAssertGreaterThan(values["scrollWidth"] as! Double, values["clientWidth"] as! Double)
+        XCTAssertLessThanOrEqual(values["scrollWidth"] as! Double, (values["clientWidth"] as! Double) + 1)
         let minWidth = values["em"] as! Double
         for width in values["widths"] as! [Double] {
             XCTAssertGreaterThanOrEqual(width + 1, minWidth)
         }
+        // With border-box a 4em column is 60 pt, so all 12 short columns fit.
+        XCTAssertEqual(values["boxSizing"] as? String, "border-box")
+        XCTAssertLessThanOrEqual(values["lastRight"] as! Double, (values["tableRight"] as! Double) + 1, "last column C12 is clipped: \(values)")
+        XCTAssertLessThanOrEqual(values["cellsSum"] as! Double, (values["clientWidth"] as! Double) + 1, "12 columns must fit: \(values)")
+
+        h!.close()
+        let headers = (1...24).map { "C\($0)" }
+        let separators = headers.map { String(repeating: "-", count: max(3, $0.count)) }
+        let wideTable = ([headers, separators, headers].map {
+            "| " + $0.joined(separator: " | ") + " |"
+        }).joined(separator: "\n")
+        h = try await EditorHarness(text: wideTable)
+        let fallback = try await h!.js("""
+        const t=document.querySelector('.vditor-ir table');
+        const s=getComputedStyle(t);
+        return {display:s.display,overflowX:s.overflowX,scrollWidth:t.scrollWidth,clientWidth:t.clientWidth};
+        """) as! [String: Any]
+        XCTAssertEqual(fallback["display"] as? String, "block")
+        XCTAssertEqual(fallback["overflowX"] as? String, "auto")
+        XCTAssertGreaterThan(fallback["scrollWidth"] as! Double, fallback["clientWidth"] as! Double)
+    }
+
+    /// T-11: `:---:` and `---:` alignment survives wrapping.
+    func testT11_columnAlignmentSurvivesWrapping() async throws {
+        h = try await EditorHarness(text: try Samples.text("wide-table.md"))
+        let a = try await h!.js("const t=document.querySelector('.vditor-ir table'); return {head:[0,1,2].map(i=>getComputedStyle(t.rows[0].cells[i]).textAlign), body:[0,1,2].map(i=>getComputedStyle(t.rows[1].cells[i]).textAlign)}") as! [String: [String]]
+        // WebKit reports `-webkit-center` / `-webkit-right` for `align="center|right"`; default column is `start`.
+        XCTAssertEqual(a["head"], ["-webkit-center", "center", "-webkit-right"])
+        XCTAssertEqual(a["body"], ["-webkit-center", "start", "-webkit-right"])
     }
 
     func testT6_sourceModeRemainsMonospacedAndUnchanged() async throws {
@@ -350,6 +405,7 @@ final class Round4Tests: XCTestCase {
         let values = try await h!.js("const s=document.querySelector('.vditor-sv'); const c=getComputedStyle(s); const td=s.querySelector('td'); return {font:c.fontFamily,hasCell:!!td, cellWrap:td ? getComputedStyle(td).whiteSpace : ''}") as! [String: Any]
         let font = values["font"] as! String
         XCTAssertTrue(font.lowercased().contains("mono") || font.contains("Menlo"))
+        // `.vditor-sv` is itself a `.vditor-reset`, so the td/th rule is inert only because Source renders no table cells.
         XCTAssertEqual(values["hasCell"] as? Bool, false)
         XCTAssertNotEqual(values["cellWrap"] as? String, "normal")
     }

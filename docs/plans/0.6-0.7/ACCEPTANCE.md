@@ -45,11 +45,11 @@
 
 | ID | Поведение | Проверка | |
 |---|---|---|---|
-| T-1 | У `td` и `th` в визуальном режиме `white-space` = `normal`, `overflow-wrap` = `anywhere`, `min-width` = 4em. | XCT (`Round4Tests`): `getComputedStyle(td).whiteSpace == "normal"`, то же для `th`. | M |
+| T-1 | У `td` и `th` в визуальном режиме заданы `white-space: normal`, `overflow-wrap: break-word`, `min-width: 4em`, `max-width: 24em`, `box-sizing: border-box`. Обычные слова не рвутся. `max-width: 24em` ограничивает ширину колонки с длинным URL; от него зависит T-4. | XCT (`Round4Tests`): проверить computed style свойств `td` и `th`. | M |
 | T-2 | Таблица (a) в окне 900 pt (размер `EditorHarness`) не прокручивается вбок: `table.scrollWidth <= table.clientWidth` и `table.scrollWidth <= editorRoot.clientWidth`. | XCT: через `h.js`. | M |
 | T-3 | Длинный абзац в ячейке занимает больше одной строки: высота `td` больше высоты соседней короткой ячейки той же строки. | XCT: `getBoundingClientRect().height`. | M |
-| T-4 | URL без пробелов (b) разрывается внутри ячейки, ширина таблицы не выходит за редактор. | XCT: `scrollWidth <= clientWidth`. | M |
-| T-5 | Таблица (c) на 12 колонок: запасная прокрутка остаётся. `getComputedStyle(table).overflowX` равно `auto`, `display` равно `block`. Вбок она прокручивается, только если колонки не помещаются при `min-width: 4em`. | XCT: значения стилей. MAN: скриншот 1100×800. | M |
+| T-4 | URL без пробелов (b) разрывается внутри ячейки, ширина таблицы не выходит за редактор. Условие выполняется благодаря `max-width: 24em`. | XCT: `scrollWidth <= clientWidth`. | M |
+| T-5 | Таблица (c) на 12 колонок не прокручивается при 900 pt / 1100×800. Запасная прокрутка остаётся для очень широких таблиц. | XCT: таблица (c) не прокручивается; сгенерированная таблица из 24 колонок прокручивается. MAN: скриншот 1100×800. | M |
 | T-6 | Режим Source не изменился: моноширинный шрифт, правило `td/th` на `.vditor-sv` не действует. | XCT: `testSourceModeIsMonospacedWithoutPreview` + проверка, что правило CSS не задевает `.vditor-sv`. | M |
 | T-7 | Правка ячейки с длинным текстом меняет в файле только эту строку таблицы. Перенос — только отображение: исходная строка остаётся одной строкой. | XCT: как `testF2_tableCellEditTouchesOnlyThatRow`, на `wide-table.md`. `diff.old.count == 1`, `diff.new.count == 1`. | M |
 | T-8 | Загрузка `wide-table.md` без правок возвращает исходный текст. | XCT: как `testF1_loadingDoesNotChangeDocument`. | M |
