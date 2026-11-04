@@ -24,9 +24,8 @@ enum MarkdownDocumentError: LocalizedError, Equatable {
 
 /// A Markdown file. `text` holds the file's exact characters (CRLF kept as is);
 /// writing an unchanged document produces the bytes that were read.
-struct MarkdownDocument: FileDocument {
+struct MarkdownDocument {
     static let utf8BOM = Data([0xEF, 0xBB, 0xBF])
-    static var readableContentTypes: [UTType] { [.markdownText] }
 
     var text: String
     var hasBOM: Bool
@@ -34,10 +33,6 @@ struct MarkdownDocument: FileDocument {
     init(text: String = "", hasBOM: Bool = false) {
         self.text = text
         self.hasBOM = hasBOM
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        try self.init(data: configuration.file.regularFileContents ?? Data())
     }
 
     init(data: Data) throws {
@@ -54,9 +49,5 @@ struct MarkdownDocument: FileDocument {
         var out = hasBOM ? Self.utf8BOM : Data()
         out.append(Data(text.utf8))
         return out
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data())
     }
 }

@@ -25,6 +25,11 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     /// Per-character editor work: from the moment the page sees the keydown to input handled (no queueing).
     private(set) var processing: [Double] = []
     var onReady: (() -> Void)?
+    /// Files dropped on the editor: they open as tabs instead of being loaded by the web view.
+    var onOpenFiles: (([URL]) -> Void)? {
+        get { (webView as? EditorWebView)?.onOpenFiles }
+        set { (webView as? EditorWebView)?.onOpenFiles = newValue }
+    }
 
     init(text: String, mode: EditorMode, documentDirectory: URL?) {
         self.text = text
@@ -40,7 +45,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         config.allowsInlinePredictions = false
         let proxy = WeakMessageHandler()
         config.userContentController.add(proxy, name: "mdedit")
-        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+        webView = EditorWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
         super.init()
         proxy.target = self
         schemeHandler.onRequest = { [weak self] url, status in
@@ -94,7 +99,11 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     func redo() { call("mdeditor.redo()", [:]) }
 
     /// The editor of the key window (or, if the app is not active, the frontmost window with an editor).
+    /// The main window answers with its active tab; other windows (tests) are searched, skipping hidden editors.
     static func forKeyWindow() -> EditorController? {
+        if let main = (NSApp.keyWindow ?? NSApp.mainWindow)?.windowController as? MainWindowController {
+            return main.store.active?.controller
+        }
         let windows = [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 } + NSApp.orderedWindows
         for window in windows where window.isVisible {
             if let controller = editor(in: window) { return controller }
@@ -106,6 +115,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         guard let root = window.contentView else { return nil }
         var stack: [NSView] = [root]
         while let view = stack.popLast() {
+            if view.isHidden { continue }
             if let web = view as? WKWebView, let controller = web.navigationDelegate as? EditorController { return controller }
             stack.append(contentsOf: view.subviews)
         }
@@ -175,10 +185,14 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         }
     }
 
+    /// Keyboard focus to the editor (a tab that became visible).
+    func focus() { focusWhenInWindow() }
+
     /// Keyboard focus to the editor once it is ready. On a fresh launch the web view may not be in its
-    /// window yet when the page reports ready, so retry for a few seconds.
+    /// window yet when the page reports ready, so retry for a few seconds. A hidden tab never takes the focus.
     private func focusWhenInWindow(attempt: Int = 0) {
         if let window = webView.window {
+            guard !webView.isHiddenOrHasHiddenAncestor else { return }
             if window.firstResponder !== webView { window.makeFirstResponder(webView) }
             return
         }
@@ -215,6 +229,41 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         preserver = nil
         webView.pageZoom = zoom
         webView.load(URLRequest(url: URL(string: "mdedit://app/web/index.html")!))
+    }
+}
+
+/// Takes file drops (Finder → editor) for the tab bar: WKWebView would load the file as a navigation,
+/// which `decidePolicyFor` refuses, so the drop would do nothing.
+final class EditorWebView: WKWebView {
+    var onOpenFiles: (([URL]) -> Void)?
+
+    private func fileURLs(_ info: NSDraggingInfo) -> [URL] {
+        guard onOpenFiles != nil else { return [] }
+        return info.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                   options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+    }
+
+    /// A tab dragged from the tab bar is not text for the document.
+    private func isTab(_ info: NSDraggingInfo) -> Bool {
+        info.draggingPasteboard.string(forType: .string)?.hasPrefix(TabDrag.prefix) == true
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if isTab(sender) { return [] }
+        return fileURLs(sender).isEmpty ? super.draggingEntered(sender) : .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if isTab(sender) { return [] }
+        return fileURLs(sender).isEmpty ? super.draggingUpdated(sender) : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if isTab(sender) { return false }
+        let urls = fileURLs(sender)
+        guard let onOpenFiles, !urls.isEmpty else { return super.performDragOperation(sender) }
+        onOpenFiles(urls)
+        return true
     }
 }
 

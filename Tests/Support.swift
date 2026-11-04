@@ -109,3 +109,39 @@ func changedLineRange(_ a: String, _ b: String) -> (old: [Substring], new: [Subs
     while s < x.count - p, s < y.count - p, x[x.count - 1 - s] == y[y.count - 1 - s] { s += 1 }
     return (Array(x[p..<(x.count - s)]), Array(y[p..<(y.count - s)]))
 }
+
+/// `SavePrompting` with fixed answers; records every question (tab model tests).
+@MainActor
+final class FakePrompter: SavePrompting {
+    var closeChoice: CloseChoice = .cancel
+    var overwriteChoice: OverwriteChoice = .cancel
+    var saveURL: URL?
+    var conflictResponse = FileWatcher.keepResponse
+    private(set) var calls: [String] = []
+    private(set) var reported: [Error] = []
+
+    func askToSave(_ doc: OpenDocument) async -> CloseChoice {
+        calls.append("askToSave \(doc.displayName)")
+        return closeChoice
+    }
+
+    func askOverwrite(_ doc: OpenDocument) async -> OverwriteChoice {
+        calls.append("askOverwrite \(doc.displayName)")
+        return overwriteChoice
+    }
+
+    func chooseSaveURL(for doc: OpenDocument) async -> URL? {
+        calls.append("chooseSaveURL \(doc.displayName)")
+        return saveURL
+    }
+
+    func showConflict(_ doc: OpenDocument) async -> NSApplication.ModalResponse {
+        calls.append("showConflict \(doc.displayName)")
+        return conflictResponse
+    }
+
+    func report(_ error: Error, for doc: OpenDocument) async {
+        calls.append("report \(doc.displayName)")
+        reported.append(error)
+    }
+}

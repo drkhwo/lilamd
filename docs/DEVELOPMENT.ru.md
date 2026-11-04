@@ -39,7 +39,7 @@ ditto "build/release/Build/Products/Release/LilaMD.app" "/Applications/LilaMD.ap
 - `Sources/EditorController.swift` — `WKWebView`, мост Swift ↔ JS, навигация запрещена, ссылки наружу.
 - `Sources/SchemeHandler.swift` — `mdedit://app/...` (ресурсы бандла) и `mdedit://doc/...` (папка документа).
 - `Sources/SourcePreserver.swift` — сохранение исходного текста нетронутых блоков (см. «Верность исходнику»).
-- `Sources/FileWatcher.swift` — подхват изменений файла другими программами.
+- `Sources/FileWatcher.swift` — подхват изменений файла другими программами (один на таб, решение принимает `OpenDocument`).
 - `Resources/web/` — страница, CSS, `editor.js` (настройка Vditor и обходы его проблем).
 - `Tests/` — XCTest: документ (A), редактор на реальном WKWebView (B, F), алгоритм сохранения исходника.
 - `scripts/smoke.sh` — раздел C через настоящее приложение (`open -a`, System Events, `log stream`, `screencapture`).
@@ -54,7 +54,16 @@ ditto "build/release/Build/Products/Release/LilaMD.app" "/Applications/LilaMD.ap
   (строки 5552–5599) модификатор Option проверяет коды `DigitN`/`KeyX`; `Equal` и `Minus` свободны.
   Для ⌘-сочетаний функция сравнивает флаги и `event.key`; `isTrusted` она не проверяет. Синтетический
   `KeyboardEvent` с `key: "="` / `"-"`, `code: Equal` / `Minus`, `metaKey: true` проходит этот матч.
-- **⇧⌘= на настоящей клавиатуре:** не проверено. Проба P9 и тесты используют синтетические `NSEvent`.
+- **⇧⌘= и ⇧⌘− (колонки таблицы, Z-13).** Проба 04.11, раскладка US, `NSEvent(cgEvent:)` (перевод клавиши
+  раскладкой, как у клавиатуры): ⇧⌘= даёт `characters` и `charactersIgnoringModifiers` «+», ⇧⌘− даёт «_».
+  WebKit передаёт странице `key` «+» / «_». Vditor на macOS ждёт «=» / «-», поэтому колонка не добавлялась.
+  ⇧⌘− страница не обрабатывала, WebKit возвращал клавишу в AppKit, и пункт Zoom Out менял масштаб на 90 %.
+  Исправление в `editor.js`: ⇧⌘ + `Equal` / `Minus` пересылаются Vditor как «=» / «-» с `shiftKey`, исходное
+  событие гасится (`preventDefault`). Тесты R2 слали `NSEvent` с «=» / «−» и Shift. Такой формы клавиатура не
+  даёт, а AppKit на неё срабатывает пунктами ⌘= / ⌘−. Тесты переведены на «+» / «_».
+  Доказательства: `~/dev/QA/2026-11-04-lilamd-0.6-0.7/R3-tabs/zoom-keys/`.
+- **Неактивные Zoom In / Zoom Out (Z-6).** SwiftUI обновляет `isEnabled` пунктов меню в `menuNeedsUpdate`,
+  то есть при открытии меню. `Round4Tests.setStoredZoom` вызывает его так же, как AppKit, и ищет пункты заново.
 
 - **Vditor 3.11.2, не 4.x.** 3.11.2 — последняя 3.x старше двух недель с известным API; 4.0 вышла в августе
   2026, её API я не проверял. Весь `dist` (22 МБ, с katex/mermaid и т. п.) лежит в бандле, чтобы любая ленивая
@@ -109,9 +118,72 @@ ditto "build/release/Build/Products/Release/LilaMD.app" "/Applications/LilaMD.ap
 - **App Sandbox выключен, подпись ad-hoc**, `webView.isInspectable = true` в Debug.
 - Swift 6 language mode, macOS 14+.
 
+## Табы (R3): было / будет
+
+«Было» — сборка `DocumentGroup` из этого worktree (0.5.1 + R1/R2, `build/dd`, Debug), 04.11.
+Доказательства: `~/dev/QA/2026-11-04-lilamd-0.6-0.7/arch/` (P1–P6) и `.../R3/tb0/`.
+Решения — ARCH 2.1 и 2.12. Ответа Стаса по C-2 нет, поэтому вопрос «Сохранить?» сделан по ACCEPTANCE TB-11/30/39 (ARCH 2.12, п. 1).
+
+| Функция | Было (0.5.1) | Доказательство | Будет (0.7) |
+|---|---|---|---|
+| Автосохранение на место | Есть. Документ `PlatformDocument_1`, `autosavesInPlace = YES` | `arch/arch-doc-policy-probe.log` | **Делаем сами.** Запись через 2 с после последней правки и при уходе из приложения. Закрытие и выход с правками спрашивают (строка ниже) |
+| Вопрос «Сохранить?» при закрытии и выходе, файл с путём | Нет: следствие `autosavesInPlace`, правки пишутся без вопроса | `arch/arch-doc-policy-probe.log` (P2). Закрытие с правками на экране не проверял | **Есть**, по ACCEPTANCE TB-11/30/39: ⌘W, красная кнопка, меню таба и ⌘Q на табе с правками → Save / Don't Save / Cancel. Правки старше 2 с уже записаны автосохранением. Ждёт подтверждения Стаса (C-2) |
+| Untitled | Черновик хранит система, `autosavesDrafts = YES` | `arch/arch-doc-policy-probe.log` (P4) | Своего хранения нет. Закрытие или выход с текстом → Save / Don't Save / Cancel. ⌘S → панель Save As |
+| Versions (Revert To, Browse All Versions) | Есть: `preservesVersions = YES`, пункт Revert To в меню File | `arch/arch-doc-policy-probe.log` (P3), `R3/tb0/02-file-menu.png` | **Отказываемся.** Откат — Time Machine или git |
+| Rename… / Move To… / Duplicate / Revert To Saved | Есть в меню File | `arch/arch-menu-probe.log` (P6), `R3/tb0/02-file-menu.png` | **Отказываемся.** Взамен Reveal in Finder в меню таба |
+| Переименование кликом по заголовку окна | Есть. Клик по имени файла в заголовке открывает поповер `NSTitlebarPopoverViewController` (имя, теги, папка) | `R3/tb0/probe-title-lldb.log` | **Отказываемся** вместе с Rename…. Proxy-иконка и ⌘-клик по заголовку остаются (`representedURL`) |
+| Проверка «файл изменился на диске» перед записью | Делает `NSDocument` | ARCH P1 | Своя: байты на диске сравниваются с последними прочитанными или записанными (`diskData`) |
+| Запуск без файла | Панель Open | `arch/arch-doc-policy-probe.log` (P5) | Панель Open, как сейчас. Под XCTest не показывается |
+| Закрытие последнего окна | Приложение работает дальше. После `performClose:` единственного окна: процесс жив, документов 0, видимых окон 0, файл не изменён | `R3/tb0/probe-close-last.log` | Так же. Последний таб закрыт → окно скрыто (`orderOut`) |
+| Open Recent | Системный (`NSDocumentController`) | `R3/tb0/02-file-menu.png` | Своё подменю из `recentDocumentURLs`, пополнение `noteNewRecentDocumentURL` |
+| Размер окна | 1100×800 (меньше на малом экране), восстановление — системой | `Round2Tests`, раздел «Решения» | 1100×800 при каждом создании окна |
+| Отмена правок до исходного текста | Окно остаётся «изменённым», автосохранение пишет те же байты (mtime меняется) | «Верность исходнику», п. 6 | Таб чистый, записи нет, mtime не меняется |
+
+Как получены строки `R3/tb0`:
+- Скрипты `probe-*.sh` в той же папке. Запуск: бинарник из `build/dd`, копия `samples/sample.md`, не `/Applications`.
+- Поповер заголовка и закрытие окна проверены через `lldb` (список окон и документов процесса). Скриншот поповера не снят: на машине в это время работал Стас, Stage Manager уводил окно пробы с экрана.
+- `01-window.png` — окно пробы, `02-file-menu.png` — меню File (TB-0).
+
+Модель табов (шаг 1): `Sources/OpenDocument.swift`, `TabStore.swift`, `SavePrompter.swift`, тесты `Tests/TabStoreTests.swift`.
+Окно и табы (шаги 2–3): `Sources/AppDelegate.swift`, `MainWindowController.swift`, `TabBarView.swift`, `EditorView.swift` (`TabbedWindow`). `DocumentGroup` удалён, сцена — `Settings` с меню. Тесты: `Tests/TabWindowTests.swift`.
+Внешние изменения и меню (шаги 4–6): `FileWatcher.swift` на колбэках, тесты `Tests/FileWatcherTests.swift`.
+Отклонения от ARCH — ARCH 2.10, 2.11 и 2.12.
+
+Табы, клавиши и меню (0.7):
+- ⌃Tab / ⇧⌘] — следующий таб, ⌃⇧Tab / ⇧⌘[ — предыдущий, по кругу. ⌘1 / ⌘2 остаются за Visual / Source.
+- File: New ⌘N, Open… ⌘O, Open Recent (с Clear Menu), Close Tab ⌘W, Save ⌘S, Save As… ⇧⌘S.
+- Контекстное меню таба: Close, Close Others, Close Tabs to the Right, Reveal in Finder, Copy Path. Последние два неактивны у Untitled.
+- Таб перетаскивается мышью на место другого таба. Файл, брошенный на полосу табов или на редактор, открывается табом.
+
+Файл изменили в другой программе:
+- Таб без правок перечитывает файл без вопроса. Файл не в UTF-8 — текст таба остаётся, в логе ошибка.
+- Таб с правками активен — сразу sheet «Keep My Version / Reload from Disk».
+- Таб с правками скрыт — sheet при переходе на таб. До ответа автосохранение таба стоит.
+- «Keep My Version» — автосохранение таба стоит до ⌘S. ⌘S, закрытие и выход спрашивают перед перезаписью.
+- Своя запись чужой не считается: диск сравнивается с байтами последнего чтения или записи, а не с текущим текстом.
+
+`scripts/smoke.sh` (не запускать без Стаса: ставит сборку в `/Applications`): шаг TB1 открывает 3 файла одним `open -a` и ждёт 1 окно и 3 строки `tab opened` в логе.
+Ручной запуск сборки из worktree, не трогая Open Recent установленного приложения: `open -n -a build/dd/Build/Products/Debug/LilaMD.app f.md --args -MDEditorRecordsRecents NO`.
+
+### Замеры R3 (04.11, Debug из `build/dd`, `-MDEditorRecordsRecents NO`)
+
+Скрипты и логи: `~/dev/QA/2026-11-04-lilamd-0.6-0.7/R3-tabs/tb1/` и `.../R3-tabs/tb36-tb38/`.
+
+- **TB-1.** 5 копий `sample.md`: первая через `open -n -a`, остальные по одной через `open -a`. Итог: 1 окно, 5 табов (`tb1-5-tabs-one-window.png`, `run.txt`). SHA-256 файлов до и после совпадают.
+- **TB-38.** Таб с `sample.md` открыт, затем 5 раз `open -a` новой копии `sample.md` до строки `editor ready` в логе: 400, 417, 404, 415, 387 мс. После исправления highlight.js (ниже): 431, 396, 414, 387, 399 мс (`tb38-fix/`). Все < 1 с.
+- **TB-36.** 10 копий `big.md`, по одной через `open -a` (каждая становится активной и получает WebView). Команда: `ps -o rss= -p <pid>` для приложения и для каждого нового процесса `com.apple.WebKit.WebContent` (у каждого таба свой процесс). Скрипт `run-fix.sh tb36`, итог `tb36-fix/result.txt`.
+  - **Причина дефекта 10-го таба.** Vditor грузит highlight.js (1 МБ) через `addScript` на каждый блок кода. `id` у тега появляется только после загрузки. Поэтому до первой загрузки каждый блок добавляет свой `<script>`, и скрипт загружается и выполняется до 500 раз (в `big.md` 500 блоков). Итог: 3 ГБ RSS (footprint 2,7 ГБ, почти всё — WebKit malloc) у одного таба. Девять таких табов загоняли систему (16 ГБ) в своп, 10-й не загружался. Тот же код есть в 0.5.1 (`index.html` и Vditor с 0.5.1 не менялись), но замер на 0.5.1 не делался.
+  - **Исправление.** `Resources/web/index.html` грузит highlight.js и `third-languages.js` один раз, с теми `id`, которые проверяет `addScript`. Vditor не менялся. Тест: `TabAcceptanceTests.testBigFileLoadsHighlightJSOnce` (один запрос на скрипт, все 500 блоков подсвечены).
+  - После исправления: все 10 табов готовы за 2,3–2,4 с. Приложение: 125–184 МБ. WebContent активного таба сразу после загрузки: 690–720 МБ. Скрытые табы через 20–40 с падают до ~20 МБ RSS (сжатая память в RSS не входит). Footprint, со сжатой памятью: активный ~545 МБ, скрытый ~258 МБ через 45 с.
+  - Сумма RSS по WebContent: 0,69 ГБ на 1 табе, 1,3–2,6 ГБ на 2–10 табах, 1,63 ГБ через 10 с после 10-го таба. По footprint 10 табов ≈ 2,9 ГБ.
+  - Порог 1,5 ГБ по сумме WebContent всё ещё превышен. RSS самого приложения (≤ 184 МБ) порог не превышает. Выгрузка WebView неактивных табов не сделана: она теряет undo таба (TB-17). Нужно решение Стаса: выгрузка с потерей undo или ограничение в README.
+
 ## Известные ограничения
 
-- ⇧⌘= и ⇧⌘− на настоящей клавиатуре: не проверено. Синтетическая проба P9 и тесты не подтверждают поведение раскладки.
+- ⇧⌘= и ⇧⌘−: проверено переводом клавиши раскладкой US (см. «Решения»), не нажатием на клавиатуре. Другие раскладки не проверены.
+- Табы (0.7): нет Versions (Revert To, Browse All Versions), Rename…, Move To…, Duplicate, Revert To Saved и переименования кликом по заголовку окна. Откат — Time Machine или git. Переименование — в Finder (Reveal in Finder в меню таба).
+- Табы (0.7): iCloud Drive и сетевые диски не проверены. `NSFileCoordinator` не используется: одновременная запись другим процессом или синхронизацией не координируется.
+- Табы не восстанавливаются после перезапуска. Таб нельзя вынести в отдельное окно.
 - Подсказки Zoom In и Zoom Out содержат новые сочетания ⌥⌘= и ⌥⌘−. Показ `.help` в меню macOS не проверялся.
 
 ### Верность исходнику

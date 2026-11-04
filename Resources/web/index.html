@@ -6,6 +6,10 @@
 <link rel="stylesheet" href="mdedit://app/vditor/dist/index.css">
 <link rel="stylesheet" href="mdedit://app/web/editor.css">
 <script src="mdedit://app/vditor/dist/index.min.js"></script>
+<!-- highlight.js under the ids Vditor's addScript checks. Vditor sets the id only once the script has loaded, so a
+     document with N code blocks otherwise loads and runs the 1 MB script N times (big.md: 500 copies, 3 GB). -->
+<script id="vditorHljsScript" src="mdedit://app/vditor/dist/js/highlight.js/highlight.min.js?v=11.7.0"></script>
+<script id="vditorHljsThirdScript" src="mdedit://app/vditor/dist/js/highlight.js/third-languages.js?v=1.0.1"></script>
 <script src="mdedit://app/web/editor.js"></script>
 </head>
 <body>

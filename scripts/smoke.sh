@@ -1,5 +1,6 @@
 #!/bin/bash
-# System smoke for LilaMD (TESTS.md section C, plus F1 through the real app).
+# System smoke for LilaMD (TESTS.md section C, plus F1 and TB-1 through the real app).
+# Since 0.7 every file opens as a tab in one main window; steps that open a file expect a tab, not a new window.
 # Usage: scripts/smoke.sh [output-dir]      (default: a new /tmp/mdeditor-smoke.XXXX)
 # Works on copies of samples/ in <output-dir>/work; samples/ is never touched.
 # Steps that need Accessibility (keystrokes via System Events) are reported "not verified" with the error.
@@ -25,7 +26,7 @@ quit_app() {
 }
 open_doc() { open -a "$APP" "$@"; sleep "${WAIT:-4}"; }
 front() { osascript -e "tell application id \"$BID\" to activate" >/dev/null 2>&1; open -a "$APP"; sleep 1.5; }
-window_id() { swift "$ROOT/scripts/windowid.swift" "LilaMD" 2>/dev/null | head -1; }
+window_id() { swift "$ROOT/scripts/windowid.swift" "LilaMD" 2>/dev/null | head -1; }  # "<id> <width> <windows>"
 shot() {  # shot <name>; retries while Stage Manager shows the window as a strip thumbnail
   local wid="" info w=0
   for _ in 1 2 3 4 5; do
@@ -163,6 +164,21 @@ if grep -q "file changed on disk" "$OUT/C7.log" && grep -q "editor reloaded" "$O
   result C7 pass "log: change detected + editor reloaded; file keeps the external line after quit"
 else
   result C7 fail "see $OUT/C7.log; tail: $(tail -1 "$WORK/crlf.md")"
+fi
+
+# TB-1 — three files in one `open -a`: three tabs in one window
+log_start TB1
+open_doc "$WORK/sample.md" "$WORK/crlf.md" "$WORK/cyrillic.md"
+front
+INFO="$(window_id)"; WINDOWS="$(echo "$INFO" | awk '{print $3}')"
+log_stop
+TABS="$(grep -c "tab opened:" "$OUT/TB1.log")"
+result TB1 shot "$(shot TB1-tabs) (look: tabs sample.md, crlf.md, cyrillic.md; cyrillic.md active)"
+quit_app
+if [ "${WINDOWS:-0}" = "1" ] && [ "$TABS" = "3" ]; then
+  result TB1 pass "windowid: 1 window; log: 3 x 'tab opened'"
+else
+  result TB1 fail "windowid: '${INFO}', 'tab opened' x ${TABS} ($OUT/TB1.log)"
 fi
 
 # C8 — dark appearance (app-level override; the system setting is not touched)

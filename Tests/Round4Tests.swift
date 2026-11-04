@@ -22,7 +22,8 @@ final class Round4Tests: XCTestCase {
     }
 
     /// Stores the zoom and waits until the View > Zoom checkmark follows it. The scene's menu closures capture SwiftUI state
-    /// that updates asynchronously, so a key sent too early would act on the previous value.
+    /// that updates asynchronously, so a key sent too early would act on the previous value. SwiftUI refreshes the items'
+    /// enabled state in `menuNeedsUpdate`, which AppKit calls when the user opens the menu, so it is called here once more.
     private func setStoredZoom(_ value: Double) async throws {
         UserDefaults.standard.set(value, forKey: ZoomPreference.key)
         let view = try XCTUnwrap(NSApp.mainMenu?.items.first { $0.title == "View" }?.submenu)
@@ -34,7 +35,9 @@ final class Round4Tests: XCTestCase {
             steps.delegate?.menuNeedsUpdate?(steps)
             view.update()
         }
-        try await Task.sleep(for: .milliseconds(200))
+        view.delegate?.menuNeedsUpdate?(view)
+        view.update()
+        try await Task.sleep(for: .milliseconds(300))
     }
 
     func testZoomLadder() throws {
@@ -98,25 +101,30 @@ final class Round4Tests: XCTestCase {
         try await setStoredZoom(1.0)
         XCTAssertEqual(steps.items.first { $0.title == "100 %" }?.state, .on)
         XCTAssertEqual(steps.items.first { $0.title == "110 %" }?.state, .off)
+        // SwiftUI may rebuild the menu items, so they are looked up again after each change.
+        func current(_ title: String) -> NSMenuItem? {
+            NSApp.mainMenu?.items.first { $0.title == "View" }?.submenu?.items.first { $0.title == title }
+        }
         try await setStoredZoom(1.5)
-        XCTAssertFalse(zoomIn.isEnabled, "Zoom In must be disabled at 150 %")
+        XCTAssertEqual(current("Zoom In")?.isEnabled, false, "Zoom In must be disabled at 150 %")
         try await setStoredZoom(0.8)
-        XCTAssertFalse(zoomOut.isEnabled, "Zoom Out must be disabled at 80 %")
+        XCTAssertEqual(current("Zoom Out")?.isEnabled, false, "Zoom Out must be disabled at 80 %")
         // NSApp's test harness does not host the SwiftUI scene command action target; item state is observable,
         // but invoking a nested Toggle here cannot reliably update the scene's @AppStorage binding.
     }
 
     func testMenuDoesNotTakeOptionCmdEquals() async throws {
         let menu = try XCTUnwrap(NSApp.mainMenu)
-        func event(_ chars: String, ignoring: String, flags: NSEvent.ModifierFlags) -> NSEvent {
+        func event(_ chars: String, ignoring: String, flags: NSEvent.ModifierFlags, keyCode: UInt16 = 24) -> NSEvent {
             NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
                              timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: 0, context: nil,
                              characters: chars, charactersIgnoringModifiers: ignoring, isARepeat: false,
-                             keyCode: 24)!
+                             keyCode: keyCode)!
         }
+        // Shift+Cmd+= and Shift+Cmd+- as the US keyboard reports them ("+" / "_"; Shift changes charactersIgnoringModifiers).
+        // A made-up event with "=" / "-" and Shift matches the Cmd+= / Cmd+- items: AppKit ignores Shift for such characters.
         XCTAssertFalse(menu.performKeyEquivalent(with: event("+", ignoring: "+", flags: [.command, .shift])))
-        XCTAssertFalse(menu.performKeyEquivalent(with: event("=", ignoring: "=", flags: [.command, .shift])))
-        XCTAssertFalse(menu.performKeyEquivalent(with: event("-", ignoring: "-", flags: [.command, .shift])))
+        XCTAssertFalse(menu.performKeyEquivalent(with: event("_", ignoring: "_", flags: [.command, .shift], keyCode: 27)))
         XCTAssertFalse(menu.performKeyEquivalent(with: event("≠", ignoring: "=", flags: [.command, .option])))
         let old = UserDefaults.standard.object(forKey: ZoomPreference.key)
         try await setStoredZoom(1.0)
@@ -227,7 +235,7 @@ final class Round4Tests: XCTestCase {
         let before = try await h!.js("return mdeditor.root().querySelector('table').rows[0].cells.length") as! Int
         try await h!.focus(); try await h!.select("alpha", collapseToEnd: true)
         try await setStoredZoom(1.0)
-        try await h!.key("+", ignoringModifiers: "=", keyCode: 24, flags: [.command, .shift])
+        try await h!.key("+", ignoringModifiers: "+", keyCode: 24, flags: [.command, .shift])  // as from the US keyboard
         try await Task.sleep(for: .milliseconds(600))
         let after = try await h!.js("return mdeditor.root().querySelector('table').rows[0].cells.length") as! Int
         XCTAssertEqual(UserDefaults.standard.double(forKey: ZoomPreference.key), 1.0)
@@ -243,7 +251,7 @@ final class Round4Tests: XCTestCase {
         try await h!.focus(); try await h!.select("beta", collapseToEnd: true)
         try await setStoredZoom(1.0)
         let before = try await h!.js("return mdeditor.root().querySelector('table').rows[0].cells.length") as! Int
-        try await h!.key("−", ignoringModifiers: "-", keyCode: 27, flags: [.command, .shift])
+        try await h!.key("_", ignoringModifiers: "_", keyCode: 27, flags: [.command, .shift])  // as from the US keyboard
         try await Task.sleep(for: .milliseconds(600))
         let after = try await h!.js("return mdeditor.root().querySelector('table').rows[0].cells.length") as! Int
         XCTAssertEqual(UserDefaults.standard.double(forKey: ZoomPreference.key), 1.0)

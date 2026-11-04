@@ -269,18 +269,21 @@
   // Cmd+= / Cmd+- belong to View > Zoom. Stop Vditor seeing them, then let AppKit route them to the menu. Vditor's own Cmd+= / Cmd+-
   // (table: add / delete row; heading: level up / down) move to Opt+Cmd+= / Opt+Cmd+-, re-sent here as
   // the keys Vditor matches. Matched by event.code: with Option, macOS reports event.key as "≠" / "–".
+  // Shift+Cmd+= / Shift+Cmd+- (table: add / delete column) are re-sent the same way: the keyboard reports event.key as
+  // "+" / "_", Vditor on macOS matches "=" / "-". preventDefault keeps WebKit from passing the unhandled key back to
+  // AppKit, where Shift+Cmd+- reached View > Zoom Out.
   document.addEventListener("keydown", (e) => {
     if (e.isTrusted && e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey &&
         (e.code === "Equal" || e.code === "Minus")) {
       e.stopImmediatePropagation();
       return;
     }
-    if (!e.isTrusted || !e.metaKey || !e.altKey || e.ctrlKey || e.shiftKey) return;
+    if (!e.isTrusted || !e.metaKey || e.ctrlKey || e.altKey === e.shiftKey) return;
     if (e.code !== "Equal" && e.code !== "Minus") return;
     e.preventDefault();
     e.stopImmediatePropagation();
     e.target.dispatchEvent(new KeyboardEvent("keydown", {
-      key: e.code === "Equal" ? "=" : "-", code: e.code, metaKey: true,
+      key: e.code === "Equal" ? "=" : "-", code: e.code, metaKey: true, shiftKey: e.shiftKey,
       bubbles: true, cancelable: true, composed: true,
     }));
   }, true);
