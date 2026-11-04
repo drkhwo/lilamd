@@ -270,8 +270,8 @@
   // (table: add / delete row; heading: level up / down) move to Opt+Cmd+= / Opt+Cmd+-, re-sent here as
   // the keys Vditor matches. Matched by event.code: with Option, macOS reports event.key as "≠" / "–".
   // Shift+Cmd+= / Shift+Cmd+- (table: add / delete column) are re-sent the same way: the keyboard reports event.key as
-  // "+" / "_", Vditor on macOS matches "=" / "-". preventDefault keeps WebKit from passing the unhandled key back to
-  // AppKit, where Shift+Cmd+- reached View > Zoom Out.
+  // "+" / "_", Vditor on macOS matches "=" / "-". preventDefault keeps WebKit from passing the key back to AppKit;
+  // the app-wide key monitor forwards the physical key codes to this web view before the Zoom menu can see them.
   document.addEventListener("keydown", (e) => {
     if (e.isTrusted && e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey &&
         (e.code === "Equal" || e.code === "Minus")) {

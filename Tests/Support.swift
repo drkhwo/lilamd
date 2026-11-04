@@ -33,6 +33,7 @@ final class EditorHarness {
     var opened: [URL] = []
 
     init(text: String, mode: EditorMode = .visual, directory: URL? = Samples.dir) async throws {
+        ZoomMenuSupport.install()
         controller = EditorController(text: text, mode: mode, documentDirectory: directory)
         window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 900, height: 700),
                           styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)

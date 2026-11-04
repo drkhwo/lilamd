@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var isUnderXCTest: Bool { ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        ZoomMenuSupport.install()
         // Our own tab bar: no system window tabs and no system "Show Next Tab" items (they would take ⌃Tab).
         NSWindow.allowsAutomaticWindowTabbing = false
         // Test hook for screenshots (TESTS C8) without changing the system setting:
