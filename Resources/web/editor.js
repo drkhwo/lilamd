@@ -266,6 +266,25 @@
     if (url) { e.preventDefault(); e.stopPropagation(); post({ type: "openLink", url: url.trim() }); }
   }, true);
 
+  // Cmd+= / Cmd+- belong to View > Zoom. Stop Vditor seeing them, then let AppKit route them to the menu. Vditor's own Cmd+= / Cmd+-
+  // (table: add / delete row; heading: level up / down) move to Opt+Cmd+= / Opt+Cmd+-, re-sent here as
+  // the keys Vditor matches. Matched by event.code: with Option, macOS reports event.key as "≠" / "–".
+  document.addEventListener("keydown", (e) => {
+    if (e.isTrusted && e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey &&
+        (e.code === "Equal" || e.code === "Minus")) {
+      e.stopImmediatePropagation();
+      return;
+    }
+    if (!e.isTrusted || !e.metaKey || !e.altKey || e.ctrlKey || e.shiftKey) return;
+    if (e.code !== "Equal" && e.code !== "Minus") return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.target.dispatchEvent(new KeyboardEvent("keydown", {
+      key: e.code === "Equal" ? "=" : "-", code: e.code, metaKey: true,
+      bubbles: true, cancelable: true, composed: true,
+    }));
+  }, true);
+
   // Input latency per character: from the keydown event's timestamp (taken when the event was created,
   // so it includes queueing) until the editor has finished handling the resulting input event.
   let pendingKey = null;

@@ -54,9 +54,11 @@ In Finder, select any `.md` file and press **Cmd+I**. Under **Open with**, choos
 | Action | Keys |
 |---|---|
 | Visual mode / Source mode | Cmd+1 / Cmd+2 |
+| Zoom in / out / actual size | Cmd+= / Cmd+- / Cmd+0 |
+| Set zoom | 80%, 90%, 100%, 110%, 120%, 150% (View → Zoom) |
+| Add / delete a table row; raise / lower a heading level | Option+Cmd+= / Option+Cmd+- |
 | Bold / Italic / Link | Cmd+B / Cmd+I / Cmd+K |
 | Undo / Redo | Cmd+Z / Cmd+Shift+Z |
-| Add a table row | Cmd+= (cursor in a table) |
 | Open a link | Cmd+click (Visual mode) |
 | Save | Cmd+S (autosave is on) |
 

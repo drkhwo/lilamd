@@ -11,6 +11,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     private(set) var text: String
     private(set) var mode: EditorMode
     private(set) var isReady = false
+    private(set) var zoom = 1.0
     private var preserver: SourcePreserver?
     private var appearanceObservation: NSKeyValueObservation?
 
@@ -81,6 +82,12 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         call("mdeditor.setMode(mode, value)", ["mode": newMode.rawValue, "value": SourcePreserver.editorText(for: text)])
     }
 
+    func setZoom(_ newZoom: Double) {
+        guard newZoom != zoom else { return }
+        zoom = newZoom
+        webView.pageZoom = newZoom
+    }
+
     /// Edit > Undo / Redo (and Cmd+Z / Cmd+Shift+Z, which the menu receives before the page does)
     /// go to Vditor's own history, so the menu and the editor never disagree.
     func undo() { call("mdeditor.undo()", [:]) }
@@ -137,6 +144,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             if let readyMode, readyMode != mode { return } // stale instance
             preserver = SourcePreserver(original: text, baseline: baseline)
             isReady = true
+            webView.pageZoom = zoom
             focusWhenInWindow()
             log.info("editor ready, mode \(self.mode.rawValue, privacy: .public)")
             onReady?()
@@ -205,6 +213,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         isReady = false
         preserver = nil
+        webView.pageZoom = zoom
         webView.load(URLRequest(url: URL(string: "mdedit://app/web/index.html")!))
     }
 }

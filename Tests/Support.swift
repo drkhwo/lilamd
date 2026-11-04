@@ -82,12 +82,12 @@ final class EditorHarness {
     }
 
     /// Sends a native key event through NSApp, the same path as the keyboard (menu key equivalents included).
-    func key(_ chars: String, keyCode: UInt16, flags: NSEvent.ModifierFlags = []) async throws {
+    func key(_ chars: String, ignoringModifiers: String? = nil, keyCode: UInt16, flags: NSEvent.ModifierFlags = []) async throws {
         for type in [NSEvent.EventType.keyDown, .keyUp] {
             let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags,
                                          timestamp: ProcessInfo.processInfo.systemUptime,
                                          windowNumber: window.windowNumber, context: nil,
-                                         characters: chars, charactersIgnoringModifiers: chars,
+                                         characters: chars, charactersIgnoringModifiers: ignoringModifiers ?? chars,
                                          isARepeat: false, keyCode: keyCode)!
             NSApp.sendEvent(event)
         }

@@ -5,6 +5,7 @@ struct EditorView: NSViewRepresentable {
     @Binding var text: String
     var mode: EditorMode
     var fileURL: URL?
+    var zoom: Double
     var fileData: () -> Data
 
     @MainActor final class Coordinator {
@@ -19,6 +20,7 @@ struct EditorView: NSViewRepresentable {
         let binding = $text
         controller.onTextChange = { binding.wrappedValue = $0 }
         context.coordinator.controller = controller
+        controller.setZoom(zoom)
         return controller.webView
     }
 
@@ -27,6 +29,7 @@ struct EditorView: NSViewRepresentable {
         let binding = $text
         controller.onTextChange = { binding.wrappedValue = $0 }
         controller.setDocumentDirectory(fileURL?.deletingLastPathComponent())
+        controller.setZoom(zoom)
         context.coordinator.watcher.view = nsView
         context.coordinator.watcher.currentData = fileData
         context.coordinator.watcher.watch(fileURL)
@@ -40,9 +43,10 @@ struct DocumentWindow: View {
     @Binding var document: MarkdownDocument
     var fileURL: URL?
     @AppStorage(EditorModePreference.key) private var mode: EditorMode = .visual
+    @AppStorage(ZoomPreference.key) private var zoom: Double = ZoomPreference.defaultValue
 
     var body: some View {
-        EditorView(text: $document.text, mode: mode, fileURL: fileURL, fileData: { [document] in document.data() })
+        EditorView(text: $document.text, mode: mode, fileURL: fileURL, zoom: ZoomPreference.snap(zoom), fileData: { [document] in document.data() })
             .frame(minWidth: 480, minHeight: 320)
             .onAppear {
                 // Test hook for screenshots (TESTS C8) without changing the system setting:

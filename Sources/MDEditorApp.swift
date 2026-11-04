@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct MDEditorApp: App {
     @AppStorage(EditorModePreference.key) private var mode: EditorMode = .visual
+    @AppStorage(ZoomPreference.key) private var zoom: Double = ZoomPreference.defaultValue
 
     /// ~1100×800 pt, but never larger than the visible area of the main screen.
     static var defaultWindowSize: CGSize {
@@ -27,6 +28,25 @@ struct MDEditorApp: App {
                     .keyboardShortcut("1", modifiers: .command)
                 Toggle("Source", isOn: Binding(get: { mode == .source }, set: { _ in mode = .source }))
                     .keyboardShortcut("2", modifiers: .command)
+                Divider()
+            }
+            CommandGroup(after: .toolbar) {
+                Button("Zoom In") { if let next = ZoomPreference.next(after: zoom) { zoom = next } }
+                    .keyboardShortcut("=", modifiers: .command)
+                    .help("Add a table row or raise a heading with Option-Command-Equals")
+                    .disabled(ZoomPreference.next(after: zoom) == nil)
+                Button("Zoom Out") { if let previous = ZoomPreference.previous(before: zoom) { zoom = previous } }
+                    .keyboardShortcut("-", modifiers: .command)
+                    .help("Delete a table row or lower a heading with Option-Command-Minus")
+                    .disabled(ZoomPreference.previous(before: zoom) == nil)
+                Button("Actual Size") { zoom = ZoomPreference.defaultValue }
+                    .keyboardShortcut("0", modifiers: .command)
+                Menu("Zoom") {
+                    ForEach(ZoomPreference.steps, id: \.self) { step in
+                        Toggle(ZoomPreference.label(step), isOn: Binding(
+                            get: { ZoomPreference.snap(zoom) == step }, set: { _ in zoom = step }))
+                    }
+                }
                 Divider()
             }
         }

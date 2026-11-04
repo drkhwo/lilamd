@@ -57,7 +57,7 @@ final class Round3Tests: XCTestCase {
             self.h = h
             try await h.focus()
             try await h.select("alpha", collapseToEnd: true)
-            try await h.key("=", keyCode: 24, flags: .command)
+            try await h.key("≠", ignoringModifiers: "=", keyCode: 24, flags: [.command, .option])
             try await h.waitForText { $0 != original }
             try await Task.sleep(for: .milliseconds(500))
             let diff = changedLineRange(original, h.controller.text)
