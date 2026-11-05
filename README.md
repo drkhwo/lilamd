@@ -74,6 +74,8 @@ In Finder, select any `.md` file and press **Cmd+I**. Under **Open with**, choos
 - **Tables.** When you change a cell or add a row, only that row changes on disk, but its column padding
   can shift. When you delete a row, or add a row and then edit a cell in the same session, the whole table
   is re-aligned (`|---|` becomes `| --- |`).
+- **Wide table cells** wrap at about 360 pt (24em at 100% zoom), so long URLs break inside the cell. A
+  column with a long paragraph does not grow wider than that, even if the window has room.
 - **New lines you type** use the editor's formatting. For example, a new task item is written as `- [ ] item`.
 - **A table at the very top of a file**: in Visual mode you cannot add text above it. Use Source mode (Cmd+2).
 - **Headings**: if you select from the start of a heading line, the selection includes the hidden `# `.
