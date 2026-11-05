@@ -48,11 +48,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    /// Tabs with a file are written without a question; only Untitled with text (or a failed write) asks.
+    /// Every tab goes through `prepareToQuit`: a big file may still have keys the page has not posted.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let dirty = store.tabs.filter(\.isDirty).count
         log.info("quit requested, \(dirty) tabs with unsaved changes")
-        guard dirty > 0 else { return .terminateNow }
-        mainWindow.show() // the questions are sheets on this window
+        guard !store.tabs.isEmpty else { return .terminateNow }
+        mainWindow.show() // a question is a sheet on this window
         Task {
             let ok = await store.prepareToQuit()
             NSApp.reply(toApplicationShouldTerminate: ok)

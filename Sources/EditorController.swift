@@ -124,6 +124,18 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
 
     func setDocumentDirectory(_ url: URL?) { schemeHandler.documentDirectory = url }
 
+    /// Reads the page's text now and handles it like an "input" message. Big files post input up to 800 ms
+    /// after a keystroke; a tab that closes or a quit must not drop those keys.
+    func flushInput() async {
+        guard isReady, preserver != nil,
+              let value = try? await evaluate("return mdeditor.getValue()") as? String,
+              let preserver else { return }
+        let merged = preserver.merge(current: value)
+        guard merged != text else { return }
+        text = merged
+        onTextChange?(merged)
+    }
+
     func applyTheme() {
         guard isReady else { return }
         call("mdeditor.setTheme(dark)", ["dark": isDark])

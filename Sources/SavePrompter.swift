@@ -8,7 +8,7 @@ enum SaveReason { case explicit, autosave }
 /// tests pass a fake with fixed answers, so close and quit flows run without clicks.
 @MainActor
 protocol SavePrompting: AnyObject {
-    /// A dirty tab is closing or the app is quitting: Save / Don't Save / Cancel.
+    /// Untitled with text (or a file tab whose write failed) is closing or the app is quitting: Save / Don't Save / Cancel.
     func askToSave(_ doc: OpenDocument) async -> CloseChoice
     /// The file on disk differs from the bytes the tab last read or wrote.
     func askOverwrite(_ doc: OpenDocument) async -> OverwriteChoice

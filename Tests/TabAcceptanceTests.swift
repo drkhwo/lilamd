@@ -236,7 +236,7 @@ final class TabAcceptanceTests: XCTestCase {
     }
 
     /// TB-11 (Untitled): Save writes and closes; Don't Save closes without a file; Cancel keeps the tab.
-    /// File tabs ask the same question, see TabStoreTests.testCloseDirtyFileAsksSaveDontSaveCancel.
+    /// File tabs are written without a question (Stas, 05.11), see TabStoreTests.testCloseDirtyFileWritesWithoutQuestion.
     func testCloseUntitledSaveDontSaveCancel() async throws {
         let target = dir.appending(path: "u.md")
         let doc = store.newUntitled()

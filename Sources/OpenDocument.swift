@@ -32,6 +32,12 @@ final class OpenDocument: ObservableObject, Identifiable {
     /// The file changed on disk while the tab had edits (TabStore asks now or when the tab is shown).
     var onConflict: (@MainActor (OpenDocument) -> Void)?
     private var autosaveTask: Task<Void, Never>?
+    /// A close or quit is resolving this tab (`TabStore`): no autosave may write while its question is on screen.
+    private var autosaveHolds = 0
+    /// Saves of this tab that are waiting for an answer (overwrite question): autosave does not start another.
+    private var savesInFlight = 0
+    /// The tab is gone (`close`): a `saveAll` that listed it earlier must not autosave it.
+    private var isClosed = false
 
     init(untitledName: String) {
         displayName = untitledName
@@ -88,7 +94,9 @@ final class OpenDocument: ObservableObject, Identifiable {
     func save(prompter: SavePrompting, reason: SaveReason = .explicit, force: Bool = false) async -> Bool {
         guard let url else { return false }
         guard isDirty || force else { return true }
-        if reason == .autosave, autosavePaused { return false }
+        if reason == .autosave, isClosed || autosavePaused || autosaveHolds > 0 || savesInFlight > 0 { return false }
+        savesInFlight += 1
+        defer { savesInFlight -= 1 }
         let diskNow = try? Data(contentsOf: url)
         if diskNow != diskData {
             answeredDiskData = diskNow
@@ -148,8 +156,28 @@ final class OpenDocument: ObservableObject, Identifiable {
         }
     }
 
+    /// A close or quit starts on this tab: the pending autosave is dropped and no new one starts until
+    /// `releaseAutosave`. Explicit saves still write.
+    func holdAutosave() {
+        autosaveHolds += 1
+        autosaveTask?.cancel()
+        autosaveTask = nil
+    }
+
+    /// The close or quit is over (Cancel keeps the tab): autosave runs again for pending edits.
+    func releaseAutosave() {
+        autosaveHolds = max(0, autosaveHolds - 1)
+        scheduleAutosave()
+    }
+
+    /// Takes the text the page has not posted yet (big files post input up to 800 ms after a keystroke).
+    func flushEditor() async {
+        await controller?.flushInput()
+    }
+
     /// The tab is going away: no more autosaves, the web view is released.
     func close() {
+        isClosed = true
         autosaveTask?.cancel()
         autosaveTask = nil
         watcher.watch(nil)
@@ -196,7 +224,7 @@ final class OpenDocument: ObservableObject, Identifiable {
     private func scheduleAutosave() {
         autosaveTask?.cancel()
         autosaveTask = nil
-        guard isDirty, url != nil, !autosavePaused else { return }
+        guard isDirty, url != nil, !isClosed, !autosavePaused, autosaveHolds == 0 else { return }
         autosaveTask = Task { [weak self] in
             try? await Task.sleep(for: Self.autosaveDelay)
             guard !Task.isCancelled, let self else { return }

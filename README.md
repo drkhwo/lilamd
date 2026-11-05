@@ -21,8 +21,9 @@ LilaMD does one thing: it opens Markdown files and edits them. It has no vault, 
   only that paragraph on disk — untouched blocks keep their original bytes.
 - **Tabs in one window.** Every file you open (Finder, Cmd+O, Open Recent, drag and drop) opens as a tab.
   A file that is already open is not opened twice: its tab comes to the front.
-- **Autosave**: a file is written 2 s after your last edit and when you switch to another app. Cmd+S saves now.
-  Closing a tab or quitting with unsaved edits asks Save / Don't Save / Cancel.
+- **Autosave**, as in Notes: a file is written 2 s after your last edit and when you switch to another app.
+  Closing a tab or the window, or quitting, writes the file first and does not ask. Cmd+S saves now.
+  Only a new Untitled document with text asks Save / Don't Save / Cancel.
 - Picks up changes made to the file by other apps. When you have unsaved edits, it asks before it reloads.
 - Light and dark mode follow the system. Works fully offline.
 
@@ -85,6 +86,9 @@ In Finder, select any `.md` file and press **Cmd+I**. Under **Open with**, choos
   git to go back, and Finder to rename or move a file (tab menu → Reveal in Finder).
 - **iCloud Drive and network drives are not tested.** LilaMD does not coordinate its writes with sync services.
 - Tabs are not restored after the app restarts. A tab cannot be moved to its own window.
+- **Memory with many tabs.** Every tab keeps its own editor in memory (so undo survives tab switches), and
+  hidden tabs are not unloaded. 10 tabs with a 6000-line file take about 1.6 GB in WebKit processes
+  (about 2.9 GB footprint). Close tabs you do not need.
 
 ## Build from source
 

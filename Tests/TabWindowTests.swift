@@ -369,9 +369,9 @@ final class TabWindowTests: XCTestCase {
         XCTAssertEqual(store.activeID, untitled.id, "the question is about the visible tab")
     }
 
-    /// TB-31: the red button asks for a dirty file tab like ⌘W. Cancel keeps the tab, the window and the file;
-    /// Save writes the file, closes the tab and hides the window.
-    func testRedButtonAsksForDirtyFileTab() async throws {
+    /// TB-31 (changed by Stas 05.11): the red button writes a dirty file tab without a question, like ⌘W,
+    /// closes the tab and hides the window.
+    func testRedButtonWritesDirtyFileTabWithoutQuestion() async throws {
         OpenDocument.autosaveDelay = .seconds(60)
         let a = try file("a.md", "Alpha\n")
         wc.open([a])
@@ -379,22 +379,16 @@ final class TabWindowTests: XCTestCase {
         try await ready(doc)
         try await type(" red", after: "Alpha", in: doc)
         try await waitUntil(5, "edit") { doc.isDirty }
-        fake.closeChoice = .cancel
-        wc.window?.performClose(nil)
-        try await waitUntil(5, "question asked") { self.fake.calls == ["askToSave a.md"] }
-        try await Task.sleep(for: .milliseconds(200))
-        XCTAssertEqual(store.tabs.map(\.displayName), ["a.md"])
-        XCTAssertEqual(wc.window?.isVisible, true)
-        XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "Alpha\n", "Cancel does not write")
-        fake.closeChoice = .save
+        fake.closeChoice = .cancel // would keep the tab if it were asked
         wc.window?.performClose(nil)
         try await waitUntil(5, "tab closed") { self.store.tabs.isEmpty }
         XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "Alpha red\n")
+        XCTAssertEqual(fake.calls, [])
         try await waitUntil(2, "window hidden") { self.wc.window?.isVisible == false }
     }
 
-    /// TB-11: ⌘W on a dirty file tab asks; Save writes the file and closes the tab.
-    func testCmdWAsksForDirtyFileTabAndSaveWrites() async throws {
+    /// TB-11 (changed by Stas 05.11): ⌘W on a dirty file tab writes the file and closes the tab, no question.
+    func testCmdWWritesDirtyFileTabWithoutQuestion() async throws {
         OpenDocument.autosaveDelay = .seconds(60)
         let a = try file("a.md", "Alpha\n")
         wc.open([a])
@@ -402,10 +396,29 @@ final class TabWindowTests: XCTestCase {
         try await ready(doc)
         try await type(" closed", after: "Alpha", in: doc)
         try await waitUntil(5, "edit") { doc.isDirty }
-        fake.closeChoice = .save
+        fake.closeChoice = .cancel
         try await key("w", keyCode: 13, flags: .command)
         try await waitUntil(5, "tab closed") { self.store.tabs.isEmpty }
         XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "Alpha closed\n")
-        XCTAssertEqual(fake.calls, ["askToSave a.md"])
+        XCTAssertEqual(fake.calls, [])
+    }
+
+    /// A file over 2000 lines posts typed text 800 ms late. ⌘W right after typing still writes those keys:
+    /// the close reads the page's text before it writes (flush).
+    func testCmdWRightAfterTypingInBigFileWritesTheKeys() async throws {
+        OpenDocument.autosaveDelay = .seconds(60)
+        let lines = (1...2100).map { "Line \($0)" }.joined(separator: "\n")
+        let a = try file("big.md", "Alpha\n\n" + lines + "\n")
+        wc.open([a])
+        let doc = try XCTUnwrap(store.active)
+        try await ready(doc)
+        try await type(" typed", after: "Alpha", in: doc)
+        XCTAssertFalse(doc.isDirty, "precondition: the page has not posted the keys yet")
+        try await key("w", keyCode: 13, flags: .command)
+        try await waitUntil(5, "tab closed") { self.store.tabs.isEmpty }
+        let saved = try String(contentsOf: a, encoding: .utf8)
+        XCTAssertTrue(saved.hasPrefix("Alpha typed\n"), String(saved.prefix(40)))
+        XCTAssertTrue(saved.hasSuffix("Line 2100\n"))
+        XCTAssertEqual(fake.calls, [])
     }
 }

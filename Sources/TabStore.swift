@@ -165,11 +165,11 @@ final class TabStore: ObservableObject {
 
     // MARK: Closing
 
-    /// false = the user cancelled; the tab stays.
+    /// false = the user cancelled (or the tab could not be written); the tab stays.
     @discardableResult
     func close(_ id: OpenDocument.ID) async -> Bool {
         guard let doc = document(id) else { return true }
-        if doc.isDirty, await !resolveUnsaved(doc) { return false }
+        guard await resolveUnsaved(doc) else { return false }
         remove(doc)
         return true
     }
@@ -191,17 +191,33 @@ final class TabStore: ObservableObject {
         activate(id)
     }
 
-    /// Before the app quits: every dirty tab is answered. false = Cancel, the app keeps running.
+    /// Before the app quits: every tab is written or answered. false = Cancel, the app keeps running.
+    /// Autosave is held on every tab until the app is gone: a tab answered Don't Save keeps its edits in memory
+    /// while later tabs ask, and neither its timer nor `saveAll(.autosave)` (focus change) may write them.
+    /// Only Cancel releases the holds.
     func prepareToQuit() async -> Bool {
-        for doc in tabs where doc.isDirty {
-            guard await resolveUnsaved(doc) else { return false }
+        let all = tabs
+        for doc in all { doc.holdAutosave() }
+        for doc in all {
+            guard await resolveUnsaved(doc) else {
+                for doc in all { doc.releaseAutosave() }
+                return false
+            }
         }
         return true
     }
 
-    /// A dirty tab is about to go away: Save / Don't Save / Cancel (TB-11, TB-30). A Save that did not write
-    /// asks again, Don't Save drops the changes.
+    /// A tab is about to go away (⌘W, tab menu, red button, ⌘Q). Notes-style (Stas, 05.11): a tab with a file
+    /// is written now, without a question. Only Untitled with text asks Save / Don't Save / Cancel (TB-11, TB-30).
+    /// A file tab whose write failed (the user kept another app's version, a disk error) asks the same question,
+    /// so edits are never dropped silently. Autosave is held the whole time: it cannot write behind a sheet.
     private func resolveUnsaved(_ doc: OpenDocument) async -> Bool {
+        doc.holdAutosave()
+        // Closed: `remove` cancels the autosave this schedules before it can run. Cancel: autosave resumes.
+        defer { doc.releaseAutosave() }
+        await doc.flushEditor()
+        guard doc.isDirty else { return true }
+        if doc.url != nil, await save(doc, reason: .explicit) { return true }
         // The question is about the tab the user sees. No conflict sheet here: the save asks before overwriting.
         select(doc.id)
         while true {

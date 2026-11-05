@@ -176,6 +176,55 @@ final class TabStoreTests: XCTestCase {
         XCTAssertNil(store.document(a.id))
     }
 
+    /// TB-13 (changed by Stas 05.11): Close Others and Close Tabs to the Right write dirty file tabs without a
+    /// question. An empty Untitled closes silently.
+    func testCloseOthersAndToTheRightWriteDirtyFilesWithoutQuestion() async throws {
+        let keep = try store.open(file("sample.md"))
+        let b = try store.open(file("crlf.md"))
+        let c = try store.open(file("cyrillic.md"))
+        let emptyUntitled = store.newUntitled()
+        b.editorChanged("b edited\n")
+        c.editorChanged("c edited\n")
+        prompter.closeChoice = .cancel // would stop the loop if it were asked
+        await store.closeToTheRight(keep.id)
+        XCTAssertEqual(store.tabs.map(\.id), [keep.id])
+        XCTAssertEqual(try bytes("crlf.md"), Data("b edited\n".utf8))
+        XCTAssertEqual(try bytes("cyrillic.md"), Data("c edited\n".utf8))
+        XCTAssertEqual(prompter.calls, [])
+        XCTAssertNil(store.document(emptyUntitled.id))
+
+        let d = try store.open(file("empty.md"))
+        d.editorChanged("d edited\n")
+        await store.closeOthers(d.id)
+        XCTAssertEqual(store.tabs.map(\.id), [d.id])
+        XCTAssertEqual(try bytes("sample.md"), try Samples.data("sample.md"))
+        XCTAssertEqual(prompter.calls, [])
+    }
+
+    /// TB-30: quit with two dirty file tabs writes both and asks nothing.
+    func testPrepareToQuitWritesAllFileTabsWithoutQuestion() async throws {
+        let a = try store.open(file("sample.md"))
+        let b = try store.open(file("crlf.md"))
+        a.editorChanged("qa\n")
+        b.editorChanged("qb\n")
+        prompter.closeChoice = .cancel
+        expectTrue(await store.prepareToQuit())
+        XCTAssertEqual(prompter.calls, [])
+        XCTAssertEqual(try bytes("sample.md"), Data("qa\n".utf8))
+        XCTAssertEqual(try bytes("crlf.md"), Data("qb\n".utf8))
+    }
+
+    /// TB-36: the memory limitation is written down in README and DEVELOPMENT.ru.md (Stas, 05.11).
+    func testMemoryLimitationIsDocumented() throws {
+        let root = Samples.dir.deletingLastPathComponent()
+        let readme = try String(contentsOf: root.appending(path: "README.md"), encoding: .utf8)
+        let dev = try String(contentsOf: root.appending(path: "docs/DEVELOPMENT.ru.md"), encoding: .utf8)
+        let readmeLimits = try XCTUnwrap(readme.components(separatedBy: "## Known limitations").last)
+        XCTAssertTrue(readmeLimits.contains("1.6 GB"))
+        let devLimits = try XCTUnwrap(dev.components(separatedBy: "## Известные ограничения").last)
+        XCTAssertTrue(devLimits.contains("1,6 ГБ") && devLimits.contains("TB-36"))
+    }
+
     // MARK: Dirty state
 
     /// TB-4: dirty after an edit; clean after save or after returning to the original text.
@@ -307,29 +356,37 @@ final class TabStoreTests: XCTestCase {
 
     // MARK: Close, quit, Save As
 
-    /// TB-11 (model): a dirty tab with a file asks. Cancel keeps the tab and the file; Don't Save closes without
-    /// writing; Save writes and closes.
-    func testCloseDirtyFileAsksSaveDontSaveCancel() async throws {
-        let original = try bytes("sample.md")
+    /// TB-11 (model, changed by Stas 05.11): a dirty tab with a file is written and closed without a question.
+    func testCloseDirtyFileWritesWithoutQuestion() async throws {
         let doc = try store.open(file("sample.md"))
         doc.editorChanged("closing\n")
+        prompter.closeChoice = .cancel // would keep the tab if it were asked
+        expectTrue(await store.close(doc.id))
+        XCTAssertEqual(store.tabs.count, 0)
+        XCTAssertEqual(try bytes("sample.md"), Data("closing\n".utf8))
+        XCTAssertEqual(prompter.calls, [])
+    }
+
+    /// The write before closing failed (the user kept another app's version): the edits are not dropped silently.
+    /// Save / Don't Save / Cancel is asked; Cancel keeps the tab, Don't Save closes, the other app's bytes stay.
+    func testCloseFileWhoseWriteFailedAsks() async throws {
+        let doc = try store.open(file("sample.md"))
+        let theirs = Data("theirs\n".utf8)
+        try theirs.write(to: file("sample.md"))
+        doc.editorChanged("mine\n")
+        prompter.overwriteChoice = .cancel
 
         prompter.closeChoice = .cancel
         expectFalse(await store.close(doc.id))
         XCTAssertEqual(store.tabs.count, 1)
-        XCTAssertEqual(try bytes("sample.md"), original)
+        XCTAssertTrue(doc.isDirty)
 
         prompter.closeChoice = .discard
         expectTrue(await store.close(doc.id))
         XCTAssertEqual(store.tabs.count, 0)
-        XCTAssertEqual(try bytes("sample.md"), original)
-
-        let again = try store.open(file("sample.md"))
-        again.editorChanged("closing\n")
-        prompter.closeChoice = .save
-        expectTrue(await store.close(again.id))
-        XCTAssertEqual(try bytes("sample.md"), Data("closing\n".utf8))
-        XCTAssertEqual(prompter.calls, ["askToSave sample.md", "askToSave sample.md", "askToSave sample.md"])
+        XCTAssertEqual(try bytes("sample.md"), theirs)
+        XCTAssertEqual(prompter.calls, ["askOverwrite sample.md", "askToSave sample.md",
+                                        "askOverwrite sample.md", "askToSave sample.md"])
     }
 
     func testCloseUntitledWithText() async throws {
@@ -359,24 +416,29 @@ final class TabStoreTests: XCTestCase {
         XCTAssertEqual(store.tabs.count, 0)
     }
 
-    /// TB-30 (model): quit asks for every dirty tab; Cancel keeps the app running and the file untouched.
+    /// TB-30 (model, changed by Stas 05.11): quit writes every tab with a file without a question and asks only
+    /// for Untitled with text. Cancel keeps the app running; the file is already written.
     func testPrepareToQuit() async throws {
-        let original = try bytes("sample.md")
         let doc = try store.open(file("sample.md"))
         doc.editorChanged("quit\n")
         let untitled = store.newUntitled()
         untitled.editorChanged("draft\n")
+        let clean = try store.open(file("crlf.md"))
+        let cleanBytes = try bytes("crlf.md")
+        store.activate(doc.id)
 
         prompter.closeChoice = .cancel
         expectFalse(await store.prepareToQuit())
-        XCTAssertEqual(prompter.calls, ["askToSave sample.md"])
-        XCTAssertEqual(try bytes("sample.md"), original)
-        XCTAssertEqual(store.activeID, doc.id, "the question is about the visible tab")
+        XCTAssertEqual(prompter.calls, ["askToSave Untitled"])
+        XCTAssertEqual(try bytes("sample.md"), Data("quit\n".utf8))
+        XCTAssertFalse(doc.isDirty)
+        XCTAssertEqual(store.activeID, untitled.id, "the question is about the visible tab")
 
         prompter.closeChoice = .discard
         expectTrue(await store.prepareToQuit())
-        XCTAssertEqual(prompter.calls, ["askToSave sample.md", "askToSave sample.md", "askToSave Untitled"])
-        XCTAssertEqual(try bytes("sample.md"), original)
+        XCTAssertEqual(prompter.calls, ["askToSave Untitled", "askToSave Untitled"])
+        XCTAssertEqual(try bytes("crlf.md"), cleanBytes)
+        XCTAssertFalse(clean.isDirty)
     }
 
     /// TB-29 (model): Save As moves the tab to the new file; the old file is not touched.
