@@ -1,67 +1,75 @@
 import SwiftUI
 import WebKit
 
+/// One tab's editor. The web view is the tab's own (`OpenDocument.makeController`), created on first show
+/// and kept while the tab is hidden, so undo history and scroll position survive tab switches (TB-17).
 struct EditorView: NSViewRepresentable {
-    @Binding var text: String
+    let document: OpenDocument
     var mode: EditorMode
-    var fileURL: URL?
-    var fileData: () -> Data
+    var zoom: Double
+    var isActive: Bool
+    var openFiles: ([URL]) -> Void
 
     @MainActor final class Coordinator {
-        var controller: EditorController?
-        let watcher = FileWatcher()
+        var wasActive = false
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> WKWebView {
-        let controller = EditorController(text: text, mode: mode, documentDirectory: fileURL?.deletingLastPathComponent())
-        let binding = $text
-        controller.onTextChange = { binding.wrappedValue = $0 }
-        context.coordinator.controller = controller
-        return controller.webView
+    func makeNSView(context: Context) -> NSView {
+        let controller = document.makeController(mode: mode, zoom: zoom)
+        let container = NSView()
+        controller.webView.frame = container.bounds
+        controller.webView.autoresizingMask = [.width, .height]
+        container.addSubview(controller.webView)
+        return container
     }
 
-    func updateNSView(_ nsView: WKWebView, context: Context) {
-        guard let controller = context.coordinator.controller else { return }
-        let binding = $text
-        controller.onTextChange = { binding.wrappedValue = $0 }
-        controller.setDocumentDirectory(fileURL?.deletingLastPathComponent())
-        context.coordinator.watcher.view = nsView
-        context.coordinator.watcher.currentData = fileData
-        context.coordinator.watcher.watch(fileURL)
+    func updateNSView(_ view: NSView, context: Context) {
+        guard let controller = document.controller else { return }
+        controller.onOpenFiles = openFiles
+        controller.setZoom(zoom) // every tab, hidden ones too (TB-26)
+        view.isHidden = !isActive
+        defer { context.coordinator.wasActive = isActive }
+        guard isActive else { return }
+        // Switching the mode recreates Vditor and drops its undo history: only the visible tab follows it now,
+        // a hidden tab gets the mode when it is shown again.
         controller.setMode(mode)
-        // Text that did not come from the editor: revert, external change, Edit > Undo.
-        if text != controller.text { controller.load(text: text) }
+        if !context.coordinator.wasActive { controller.focus() }
     }
 }
 
-struct DocumentWindow: View {
-    @Binding var document: MarkdownDocument
-    var fileURL: URL?
+/// The main window's content: tab bar over the editors of the tabs shown so far.
+struct TabbedWindow: View {
+    @ObservedObject var store: TabStore
+    var openFiles: ([URL]) -> Void
     @AppStorage(EditorModePreference.key) private var mode: EditorMode = .visual
+    @AppStorage(ZoomPreference.key) private var zoom: Double = ZoomPreference.defaultValue
 
     var body: some View {
-        EditorView(text: $document.text, mode: mode, fileURL: fileURL, fileData: { [document] in document.data() })
-            .frame(minWidth: 480, minHeight: 320)
-            .onAppear {
-                // Test hook for screenshots (TESTS C8) without changing the system setting:
-                // `open -a "LilaMD" file.md --args -MDEditorAppearance dark`.
-                switch UserDefaults.standard.string(forKey: "MDEditorAppearance") {
-                case "dark": NSApp.appearance = NSAppearance(named: .darkAqua)
-                case "light": NSApp.appearance = NSAppearance(named: .aqua)
-                default: break
+        VStack(spacing: 0) {
+            TabBarView(store: store, openFiles: openFiles)
+            Divider()
+            ZStack {
+                // Creation order, never reordered: moving a tab never re-parents a web view.
+                ForEach(store.documents.filter { store.shown.contains($0.id) }) { doc in
+                    EditorView(document: doc, mode: mode, zoom: ZoomPreference.snap(zoom),
+                               isActive: doc.id == store.activeID, openFiles: openFiles)
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Mode", selection: $mode) {
-                        Text("Visual").tag(EditorMode.visual)
-                        Text("Source").tag(EditorMode.source)
-                    }
-                    .pickerStyle(.segmented)
-                    .help("Visual (⌘1) / Source (⌘2)")
+            // Fills the window also with no editor yet (the window keeps its size, it does not shrink to the content).
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 480, minHeight: 320)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("Mode", selection: $mode) {
+                    Text("Visual").tag(EditorMode.visual)
+                    Text("Source").tag(EditorMode.source)
                 }
+                .pickerStyle(.segmented)
+                .help("Visual (⌘1) / Source (⌘2)")
             }
+        }
     }
 }

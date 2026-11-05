@@ -1,19 +1,25 @@
 import AppKit
 
-/// Watches the open file for changes made by other apps (TESTS C7). If the window has no unsaved edits,
-/// the document is reverted to the disk version; otherwise the user is asked, so nothing is lost silently.
+/// Watches a tab's file for changes made by other apps (TESTS C7). A clean tab takes the disk version;
+/// a tab with unsaved edits is asked (by its owner), so nothing is lost silently.
 @MainActor
 final class FileWatcher {
     private var source: DispatchSourceFileSystemObject?
     private var url: URL?
     private var pending: DispatchWorkItem?
-    weak var view: NSView?
-    /// Current document bytes, to tell our own saves from foreign changes.
-    var currentData: () -> Data = { Data() }
+    /// Bytes the app last read or wrote (not the current text): our own saves are never "foreign" (TB-25).
+    var knownData: () -> Data? = { nil }
+    var isDirty: () -> Bool = { false }
+    /// Clean document: take the disk version.
+    var reload: (Data) -> Void = { _ in }
+    /// Dirty document: ask (the tab shows the sheet now or when it becomes active).
+    var conflict: (Data) -> Void = { _ in }
 
     func watch(_ newURL: URL?) {
         guard newURL != url else { return }
         url = newURL
+        pending?.cancel()
+        pending = nil
         restart()
     }
 
@@ -36,7 +42,7 @@ final class FileWatcher {
         pending?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
-                guard let self else { return }
+                guard let self, self.url != nil else { return }
                 // Atomic saves replace the file: watch the new inode.
                 if events.contains(.delete) || events.contains(.rename) { self.restart() }
                 self.check()
@@ -47,17 +53,10 @@ final class FileWatcher {
     }
 
     private func check() {
-        guard let url, let disk = try? Data(contentsOf: url), disk != currentData() else { return }
-        guard let window = view?.window, let document = NSDocumentController.shared.document(for: window), let type = document.fileType else { return }
-        log.info("file changed on disk: \(url.path, privacy: .public), edited=\(document.isDocumentEdited)")
-        if !document.isDocumentEdited {
-            try? document.revert(toContentsOf: url, ofType: type)
-            return
-        }
-        let alert = Self.makeConflictAlert(fileName: url.lastPathComponent)
-        alert.beginSheetModal(for: window) { response in
-            if response == Self.reloadResponse { try? document.revert(toContentsOf: url, ofType: type) }
-        }
+        guard let url, let disk = try? Data(contentsOf: url), disk != knownData() else { return }
+        let dirty = isDirty()
+        log.info("file changed on disk: \(url.path, privacy: .public), edited=\(dirty)")
+        if dirty { conflict(disk) } else { reload(disk) }
     }
 
     static let keepResponse = NSApplication.ModalResponse.alertFirstButtonReturn

@@ -19,7 +19,11 @@ LilaMD does one thing: it opens Markdown files and edits them. It has no vault, 
   images next to the file.
 - **Faithful to your file**: opening and closing a file does not rewrite it. Editing one paragraph changes
   only that paragraph on disk — untouched blocks keep their original bytes.
-- Double-click a `.md` in Finder, Cmd+S, autosave, Open Recent — the standard macOS document behavior.
+- **Tabs in one window.** Every file you open (Finder, Cmd+O, Open Recent, drag and drop) opens as a tab.
+  A file that is already open is not opened twice: its tab comes to the front.
+- **Autosave**, as in Notes: a file is written 2 s after your last edit and when you switch to another app.
+  Closing a tab or the window, or quitting, writes the file first and does not ask. Cmd+S saves now.
+  Only a new Untitled document with text asks Save / Don't Save / Cancel.
 - Picks up changes made to the file by other apps. When you have unsaved edits, it asks before it reloads.
 - Light and dark mode follow the system. Works fully offline.
 
@@ -54,11 +58,16 @@ In Finder, select any `.md` file and press **Cmd+I**. Under **Open with**, choos
 | Action | Keys |
 |---|---|
 | Visual mode / Source mode | Cmd+1 / Cmd+2 |
+| Zoom in / out / actual size | Cmd+= / Cmd+- / Cmd+0 |
+| Set zoom | 80%, 90%, 100%, 110%, 120%, 150% (View → Zoom) |
+| Add / delete a table row; raise / lower a heading level | Option+Cmd+= / Option+Cmd+- |
 | Bold / Italic / Link | Cmd+B / Cmd+I / Cmd+K |
 | Undo / Redo | Cmd+Z / Cmd+Shift+Z |
-| Add a table row | Cmd+= (cursor in a table) |
 | Open a link | Cmd+click (Visual mode) |
-| Save | Cmd+S (autosave is on) |
+| Save / Save As | Cmd+S / Cmd+Shift+S (autosave is on) |
+| New tab / Open file / Close tab | Cmd+N / Cmd+O / Cmd+W |
+| Next tab / previous tab | Ctrl+Tab or Cmd+Shift+] / Ctrl+Shift+Tab or Cmd+Shift+[ |
+| Add / delete a table column | Cmd+Shift+= / Cmd+Shift+- |
 
 ## Known limitations
 
@@ -72,6 +81,14 @@ In Finder, select any `.md` file and press **Cmd+I**. Under **Open with**, choos
 - **Large files** (thousands of lines): typing can stall for 0.2–2 s in the first 5–10 s after the file
   opens. After that, typing takes about 25–50 ms per key.
 - Files must be UTF-8.
+- **No macOS document versions.** There is no Revert To / Browse All Versions, Rename…, Move To…,
+  Duplicate or Revert To Saved, and you cannot rename a file by clicking the window title. Use Time Machine or
+  git to go back, and Finder to rename or move a file (tab menu → Reveal in Finder).
+- **iCloud Drive and network drives are not tested.** LilaMD does not coordinate its writes with sync services.
+- Tabs are not restored after the app restarts. A tab cannot be moved to its own window.
+- **Memory with many tabs.** Every tab keeps its own editor in memory (so undo survives tab switches), and
+  hidden tabs are not unloaded. 10 tabs with a 6000-line file take about 1.6 GB in WebKit processes
+  (about 2.9 GB footprint). Close tabs you do not need.
 
 ## Build from source
 
@@ -89,7 +106,8 @@ ditto build/release/Build/Products/Release/LilaMD.app /Applications/LilaMD.app
 
 ## How it works
 
-LilaMD is a SwiftUI `DocumentGroup` app with one `WKWebView` per window. The web view runs
+LilaMD is a SwiftUI app with one main window and its own tab bar. Each tab has its own `WKWebView`,
+created when the tab is first shown. The web view runs
 [Vditor](https://github.com/Vanessa219/vditor) 3.11.2 in instant-rendering mode. Vditor and all its
 resources are bundled, and the page cannot reach the network. A Swift layer
 (`Sources/SourcePreserver.swift`) compares each edit with the text loaded from disk. It writes back the
