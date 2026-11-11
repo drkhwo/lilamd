@@ -70,7 +70,8 @@
   // An IME composition is on (between compositionstart and compositionend).
   let composing = false;
   document.addEventListener("compositionstart", () => { composing = true; }, true);
-  document.addEventListener("compositionend", () => { composing = false; }, true);
+  let compositionEndedAt = -Infinity;
+  document.addEventListener("compositionend", () => { composing = false; compositionEndedAt = performance.now(); }, true);
   let inInputEvent = false;
   document.addEventListener("input", () => { inInputEvent = true; setTimeout(() => { inInputEvent = false; }, 0); }, true);
   window.addEventListener("input", () => { inInputEvent = false; });
@@ -140,6 +141,11 @@
     for (const m of ["ir", "sv"]) {
       if (!inner[m]) continue;
       inner[m].element.addEventListener("keydown", (e) => { if (!refreshedIdle && !composing && !e.isComposing) refreshUndoBase(); }, true);
+      // The Return that commits an IME composition (Japanese, Chinese): WebKit fires compositionend first, so the keydown
+      // reports isComposing false (keyCode 229 still). Vditor would take it for a new line: <br> in a table cell.
+      inner[m].element.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.isComposing && (e.keyCode === 229 || performance.now() - compositionEndedAt < 100)) e.stopImmediatePropagation();
+      }, true);
     }
     // Typing with the caret directly in the editor root (e.g. after Cmd+Down past a final code block)
     // makes Vditor re-render the whole document through Lute on the next keystrokes (~1 s on big files).

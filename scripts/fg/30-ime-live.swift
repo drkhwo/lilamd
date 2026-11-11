@@ -5,7 +5,7 @@
 //   enabled                 ids of the enabled keyboard input sources, sorted, one per line
 //   current                 id of the current input source
 //   exists <id>             "yes" if the system knows the source (selectable), else "no"; exit 1 on "no"
-//   is-enabled <id>         "yes" | "no"
+//   is-enabled <id>         "yes" | "no" (member of the enabled list)
 //   enable <id>             TISEnableInputSource; exit 1 if the system refuses
 //   disable <id>            TISDisableInputSource
 //   select <id>             TISSelectInputSource; exit 1 if the source is not enabled or selectable
@@ -35,7 +35,10 @@ func sources(includeAll: Bool) -> [TISInputSource] {
 func source(_ id: String) -> TISInputSource? {
     sources(includeAll: true).first { prop($0, kTISPropertyInputSourceID) == id }
 }
-func idArg() -> String { args.count > 1 ? args[1] : fail("input source id expected") }
+func idArg() -> String {
+    guard args.count > 1 else { fail("input source id expected") }
+    return args[1]
+}
 
 switch cmd {
 case "enabled":
@@ -47,8 +50,9 @@ case "exists":
     guard let s = source(idArg()), flag(s, kTISPropertyInputSourceIsSelectCapable) else { print("no"); exit(1) }
     print("yes")
 case "is-enabled":
-    guard let s = source(idArg()) else { print("no"); exit(0) }
-    print(flag(s, kTISPropertyInputSourceIsEnabled) ? "yes" : "no")
+    // Membership in the enabled list, not the IsEnabled flag: after a disable the flag of an input mode stays true (stale).
+    let ids = sources(includeAll: false).compactMap { prop($0, kTISPropertyInputSourceID) }
+    print(ids.contains(idArg()) ? "yes" : "no")
 case "enable":
     guard let s = source(idArg()) else { fail("unknown source \(idArg())") }
     guard TISEnableInputSource(s) == noErr else { fail("TISEnableInputSource refused \(idArg())") }
@@ -59,10 +63,15 @@ case "select":
     guard let s = source(idArg()), flag(s, kTISPropertyInputSourceIsEnabled), flag(s, kTISPropertyInputSourceIsSelectCapable) else {
         fail("source \(idArg()) is not enabled or not selectable")
     }
-    guard TISSelectInputSource(s) == noErr else { fail("TISSelectInputSource refused \(idArg())") }
+    let rc = TISSelectInputSource(s)
+    guard rc == noErr else { fail("TISSelectInputSource refused \(idArg()): OSStatus \(rc)") }
 case "hold":
     guard args.count >= 3, let code = UInt16(args[1]), let secs = Double(args[2]) else { fail("hold <keycode> <seconds> [pick-keycode]") }
-    func key(_ c: UInt16, down: Bool) { CGEvent(keyboardEventSource: nil, virtualKey: c, keyDown: down)?.post(tap: .cghidEventTap); usleep(20_000) }
+    func key(_ c: UInt16, down: Bool) {
+        let e = CGEvent(keyboardEventSource: CGEventSource(stateID: .hidSystemState), virtualKey: c, keyDown: down)
+        e?.flags = []
+        e?.post(tap: .cghidEventTap); usleep(20_000)
+    }
     key(code, down: true)
     Thread.sleep(forTimeInterval: secs)
     if args.count > 3, let pick = UInt16(args[3]) { key(pick, down: true); key(pick, down: false); Thread.sleep(forTimeInterval: 0.2) }

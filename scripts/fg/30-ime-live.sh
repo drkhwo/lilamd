@@ -1,6 +1,7 @@
 #!/bin/bash
 # FOREGROUND step 30: live typing with real input sources (IME-7, IME-8, IME-9).
 #   scripts/fg/30-ime-live.sh                       sources that are enabled now; the others are reported and skipped
+#   ONLY=<RussianWin|Pinyin|Kana> limits the run to one source; PLACE=<paragraph|heading|table|list|first-line> to one place.
 #   ENABLE_MISSING=1 scripts/fg/30-ime-live.sh      also enables the sources the system knows but the user has not enabled
 #                                                   (Pinyin – Simplified, Japanese Kana); they are disabled again on exit.
 #                                                   Installs nothing: a source the system does not know is only reported.
@@ -49,8 +50,12 @@ quit_app() {
 }
 cleanup() {
   quit_app
-  for id in "${ENABLED_BY_US[@]:-}"; do [ -n "$id" ] && "$IMETOOL" disable "$id" 2>/dev/null; done
   "$IMETOOL" select "$SOURCE_BEFORE" 2>/dev/null
+  # Disable everything that is enabled now and was not before (the mode, its parent input method, a palette that came with it).
+  # Longest id first: modes before their parents.
+  local extra
+  extra="$("$IMETOOL" enabled | grep -vxF -f <(grep -v '^current:' "$OUT/sources-before.txt") | awk '{print length($0), $0}' | sort -rn | cut -d' ' -f2-)"
+  while IFS= read -r id; do [ -n "$id" ] && "$IMETOOL" disable "$id" 2>/dev/null; done <<< "$extra"
   sleep 0.5
   "$IMETOOL" enabled > "$OUT/sources-after.txt" 2>/dev/null
   echo "current: $("$IMETOOL" current 2>/dev/null)" >> "$OUT/sources-after.txt"
@@ -79,6 +84,7 @@ keys() {  # keys <code>…: one key per step, no modifiers
 declare -a S_NAME=(RussianWin Pinyin Kana)
 declare -a S_ID=(com.apple.keylayout.RussianWin com.apple.inputmethod.SCIM.ITABC com.apple.inputmethod.Kotoeri.KanaTyping.Japanese)
 declare -a S_KEYS=("5 4 11 2 17 45" "45 34 4 0 31" "11 16 34 0 3")
+declare -a S_PARENT=("" com.apple.inputmethod.SCIM com.apple.inputmethod.Kotoeri.KanaTyping)   # input methods that own the mode: enable them first
 declare -a S_COMMIT=("" 49 36)
 declare -a S_EXPECT=("привет" "你好" "こんにちは")
 
@@ -91,12 +97,13 @@ say "IME live run $(date '+%F %T'); original source: $SOURCE_BEFORE; ENABLE_MISS
 
 for si in "${!S_NAME[@]}"; do
   name="${S_NAME[$si]}"; id="${S_ID[$si]}"; expect="${S_EXPECT[$si]}"
+  [ -n "${ONLY:-}" ] && [ "$ONLY" != "$name" ] && continue   # ONLY=Pinyin: one source (debugging)
   if [ "$("$IMETOOL" is-enabled "$id")" != yes ]; then
     if [ "$("$IMETOOL" exists "$id")" != yes ]; then
       skipped=$((skipped + 5)); say "SKIP $name: the system does not know $id (nothing is installed by this step)"; continue
     fi
     if [ "${ENABLE_MISSING:-0}" = 1 ]; then
-      if "$IMETOOL" enable "$id"; then ENABLED_BY_US+=("$id"); say "$name: enabled for this run, disabled again on exit"; else
+      if { [ -z "${S_PARENT[$si]}" ] || "$IMETOOL" enable "${S_PARENT[$si]}"; } && "$IMETOOL" enable "$id" && sleep 1; then ENABLED_BY_US+=("$id"); say "$name: enabled for this run, disabled again on exit"; else
         skipped=$((skipped + 5)); say "SKIP $name: the system refused to enable $id"; continue
       fi
     else
@@ -105,6 +112,7 @@ for si in "${!S_NAME[@]}"; do
   fi
   for pi in "${!P_NAME[@]}"; do
     place="${P_NAME[$pi]}"
+    [ -n "${PLACE:-}" ] && [ "$PLACE" != "$place" ] && continue   # PLACE=table: one place (debugging)
     f="$WORK/${name}-${place}.md"
     printf "${P_DOC[$pi]}" > "$f"
     cp "$f" "$OUT/files/${name}-${place}.before.md"
@@ -118,8 +126,9 @@ for si in "${!S_NAME[@]}"; do
     if ! "$FGTOOL" activate "$PID" 2>/dev/null; then skipped=$((skipped + 1)); say "SKIP $name/$place: app not frontmost"; continue; fi
     "$FGTOOL" key 125 cmd; sleep 0.3                      # ⌘↓: caret at the end of the document
     if ! "$IMETOOL" select "$id" || ! wait_source "$id"; then
-      fail=$((fail + 1)); say "FAIL $name/$place: could not select $id (current: $("$IMETOOL" current))"; continue
+      fail=$((fail + 1)); say "FAIL $name/$place: could not select $id (current: $("$IMETOOL" current), enabled: $("$IMETOOL" is-enabled "$id"))"; continue
     fi
+    sleep 0.6                                             # the app's text input context follows the source switch a moment later
     keys ${S_KEYS[$si]}
     sleep 0.5
     "$FGTOOL" windows "$PID" | sort -k4 -n -r | head -1 | awk '{print $1}' | { read -r wid; [ -n "$wid" ] && screencapture -x -o -l "$wid" "$OUT/shots/${name}-${place}-marked.png"; }

@@ -187,6 +187,21 @@ final class IMETests: XCTestCase {
     func testIME3_pinyin() async throws { try await runPlaces(marked: ["n", "ni", "ni h", "ni hao"], commit: "你好世界") }
     /// IME-4
     func testIME4_kana() async throws { try await runPlaces(marked: ["こ", "こん", "こんに", "こんにち"], commit: "こんにちは") }
+    /// The Return that commits Japanese or Chinese text: WebKit fires compositionend first, so the keydown reports
+    /// isComposing false (keyCode 229). Vditor took it for a new line: `<br />` after the text in a table cell
+    /// (found by the live step 30, Kana in a table cell).
+    func testIME4b_commitReturnDoesNotBreakTableCell() async throws {
+        try await open("intro\n\n| alpha | beta |\n| --- | --- |\n| gamma | delta |\n\nlast\n")
+        try await placeCaret("SELECT:gamma")
+        try await ime.compose(marked: ["こ", "こん", "こんにち"], commit: "こんにちは")
+        try await h.js("""
+        (document.activeElement || document.body).dispatchEvent(new KeyboardEvent("keydown",
+          { key: "Enter", code: "Enter", keyCode: 229, isComposing: false, bubbles: true, cancelable: true }));
+        """)
+        try await h.waitForText { _ in true }
+        try await Task.sleep(for: .milliseconds(1200)) // the lazy Markdown (editor.js LAZY) arrives by timer
+        XCTAssertEqual(h.controller.text, "intro\n\n| alpha | beta |\n| --- | --- |\n| gammaこんにちは | delta |\n\nlast\n")
+    }
     /// Path B (JS simulation) on all three, so the fallback is also proven.
     func testIME2B_fallbackPathB() async throws {
         try await runPlaces(marked: ["n", "ni", "ni hao"], commit: "你好世界", forceB: true)
