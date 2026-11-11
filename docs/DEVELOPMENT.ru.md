@@ -14,6 +14,10 @@ xcodegen generate                # .xcodeproj генерируется из proj
 scripts/test.sh                  # в фоне: без активации, окна за экраном; тесты горячих клавиш окна пропускаются
 scripts/test.sh --foreground     # всё, забирает экран; это прогон для приёмки
 
+# проба Close Tab из меню (CLOSE-3), 100 запусков, ~4 мин; в обычном прогоне пропускается (1 skip)
+TEST_RUNNER_MDEDITOR_CLOSE_PROBE=100 TEST_RUNNER_MDEDITOR_CLOSE_PROBE_LOG=/tmp/bg-100.log \
+  scripts/test.sh -only-testing:MDEditorTests/CloseTabTests/testCloseTabProbe
+
 # смоук раздела C (+ F1 через настоящее приложение): Release-сборка, установка в /Applications, скриншоты
 scripts/smoke.sh [папка-для-артефактов]      # по умолчанию /tmp/mdeditor-smoke.XXXX, итог в summary.txt
 

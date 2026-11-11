@@ -17,13 +17,22 @@ struct MDEditorApp: App {
         // The scene is here for the menu commands only.
         Settings { EmptyView() }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About LilaMD") { AboutPanel.show() }
+            }
+            // No Settings. SwiftUI keeps the separators around the empty slot: `AppMenu` hides one (MAC-8).
             CommandGroup(replacing: .appSettings) {}
+            CommandGroup(replacing: .help) {
+                ForEach(AppLinks.help, id: \.title) { item in
+                    Button(item.title) { NSWorkspace.shared.open(item.url) }
+                }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New") { appDelegate.newDocument() }
                     .keyboardShortcut("n", modifiers: .command)
                 Button("Open…") { appDelegate.openDocument() }
                     .keyboardShortcut("o", modifiers: .command)
-                OpenRecentMenu { appDelegate.targetWindow().open([$0]) }
+                OpenRecentMenu { appDelegate.openRecent($0) }
             }
             CommandGroup(replacing: .saveItem) {
                 Button("Close Tab") { appDelegate.closeTab() }
@@ -81,11 +90,23 @@ struct MDEditorApp: App {
 @MainActor
 final class RecentDocuments: ObservableObject {
     static let shared = RecentDocuments()
-    @Published private(set) var urls: [URL] = NSDocumentController.shared.recentDocumentURLs
+    @Published private(set) var urls: [URL]
+    /// Tests pass their own list: the system one is shared with the installed app (same bundle id).
+    private let source: () -> [URL]
+
+    init(source: @escaping () -> [URL] = { NSDocumentController.shared.recentDocumentURLs }) {
+        self.source = source
+        urls = source()
+    }
 
     func note(_ url: URL) {
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
-        urls = NSDocumentController.shared.recentDocumentURLs
+        urls = source()
+    }
+
+    /// The system list may have changed (a moved file resolves to its new path): read it again.
+    func refresh() {
+        urls = source()
     }
 
     func clear() {

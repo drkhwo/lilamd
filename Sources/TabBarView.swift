@@ -6,20 +6,31 @@ struct TabBarView: View {
     @ObservedObject var store: TabStore
     var openFiles: ([URL]) -> Void
 
+    /// Width of the tabs; the rest of the visible strip is `WindowDragArea` (1.3).
+    @State private var tabsWidth: CGFloat = 0
+
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    ForEach(store.tabs) { doc in
-                        TabItem(store: store, document: doc, isActive: doc.id == store.activeID,
-                                isOnly: store.order.count == 1, isLast: store.order.last == doc.id)
-                            .id(doc.id)
-                        Divider()
+        GeometryReader { strip in
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            ForEach(store.tabs) { doc in
+                                TabItem(store: store, document: doc, isActive: doc.id == store.activeID,
+                                        isOnly: store.order.count == 1, isLast: store.order.last == doc.id)
+                                    .id(doc.id)
+                                Divider()
+                            }
+                        }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabsWidth = $0 }
+                        // Next to the tabs, never under them: a tab drag must not move the window.
+                        WindowDragArea()
+                            .frame(width: max(0, strip.size.width - tabsWidth))
                     }
                 }
-            }
-            .onChange(of: store.activeID) { _, id in
-                if let id { proxy.scrollTo(id) }
+                .onChange(of: store.activeID) { _, id in
+                    if let id { proxy.scrollTo(id) }
+                }
             }
         }
         .frame(height: 28)

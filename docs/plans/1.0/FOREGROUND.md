@@ -49,3 +49,39 @@
 ---
 
 <!-- D1, D2, D3: добавляйте шаги ниже, по одному разделу на скрипт. Номера: 10–19 D1 (TAB), 20–29 D2 (CLOSE, MAC), 30–39 D3 (IME, MER). -->
+
+---
+
+## Шаг 20. Close Tab на экране, 100 засчитанных запусков (D2)
+
+- Команды (два прогона подряд):
+  - `scripts/fg/20-close-100.sh` — ⌘W и «File ▸ Close Tab» через AX по очереди (CLOSE-4);
+  - `scripts/fg/20-close-100.sh cmdw` — только ⌘W, 100 засчитанных запусков.
+- Что делает: собирает Debug в `build/dd` и хелпер `scripts/fg/fgtool.swift` (во временную папку). Запускает Debug-сборку с 140 файлами (`open -n`, `-MDEditorRecordsRecents NO`), процесс ищет по pid — установленный LilaMD не задевается. Пишет `log stream` подсистемы `com.drkhwo.lilamd` в `stream.log`. В каждом запуске: клик в редактор, ⌘↓, ввод метки ` e<N>` (Unicode-события, от раскладки не зависят), пауза 0,3 / 2,0 с, закрытие. Проверка: вкладки `tab:<имя>` нет в AX, файл содержит метку.
+- Засчитывание: если после ввода окно не «edited» (AX `AXEdited` у кнопки закрытия = false), правка не дошла — запуск не засчитан, причина в `run.txt`. Если атрибут не читается (`unknown`), запуск засчитан: «вкладка закрыта, метки нет» — это FAIL, не пропуск.
+- Что берёт у Стаса: экран, фокус, мышь, клавиатуру, источник ввода (U.S. на время шага, для ⌘W по key code). Около 6–8 минут на прогон.
+- Возврат состояния (`trap … EXIT`): Debug-приложение закрыто, источник ввода возвращён (`source-before.txt` / `source-after.txt`), переднее приложение возвращено, `log stream` остановлен, временные файлы удалены.
+- Ожидаемо: `RESULT 20-close-100-alternate PASS pass=100 fail=0 skipped=K` и `RESULT 20-close-100-cmdw PASS pass=100 fail=0 skipped=K`.
+- Доказательства: `E/CLOSE/fg/run.txt`, `E/CLOSE/fg/stream.log`, `E/CLOSE/fg/shots/run<N>-{before,after}.png` на каждый отказ; то же в `E/CLOSE/fg-cmdw/`. CLOSE-5: строка `log:` в `run.txt` (`closeTab=…`, `TabStore.close end=…`, `flushEditor=…` > 0), сами строки — в `stream.log`.
+- Условия: терминалу, из которого идёт шаг, нужно разрешение Accessibility (AX и CGEvent). Без него шаг падает сразу: «0 tabs in AX». Источник U.S. (`com.apple.keylayout.US`) включён.
+- Критерии: CLOSE-4, CLOSE-5.
+
+---
+
+## Шаг 21. Правила macOS: About, перетаскивание окна, Open Recent, Help (D2)
+
+- Команда: `scripts/fg/21-mac.sh`
+- Что делает (Debug из `build/dd`, процесс по pid):
+  1. Меню LilaMD в AX → `app-menu.txt` (MAC-8 вживую: нет разделителя сверху и двух подряд). About (MAC-2): «LilaMD ▸ About LilaMD» через AX, снимок панели, тексты AX → `about.txt`. Проверка: строка `"<версия> (<коммит>)"` из `Info.plist` сборки. ⌘W закрывает панель (ветка Close Tab «другое ключевое окно»).
+  2. Заголовок (MAC-3): точка заголовка, где AX видит `AXWindow`/`AXToolbar`; перетаскивание на (+120, +60); `frame` до/после.
+  3. Пустая часть полосы вкладок (MAC-4): точка на 60 pt правее последней вкладки; то же перетаскивание.
+  4. Перетаскивание вкладки (MAC-4): первая вкладка на место третьей — порядок AX изменился, `frame` окна тот же.
+  5. Двойной клик (MAC-5): по заголовку, затем по полосе; `frame` после обоих совпадает. Только при `AppleActionOnDoubleClick` = не задан / `Maximize`; иначе «не проверено» в `drag.txt`.
+  6. Open Recent (MAC-6, MAC-7): Debug-сборка с `-MDEditorRecordsRecents YES` открывает файл, выходит; файл удаляется / перемещается / уходит в Корзину; новый запуск, панель Open — Cancel, «File ▸ Open Recent ▸ <имя>». Снимок алерта (или окна), тексты AX, жив ли процесс, число вкладок → `recent.txt`.
+  7. Help (MAC-10): оба пункта; URL активной вкладки браузера по умолчанию (Chrome или Safari через AppleScript). Совпал — шаг закрывает эту вкладку. Другой браузер — «не проверено».
+- Open Recent общий с установленным приложением (один bundle id). Шаг копирует `~/Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.ApplicationRecentDocuments/com.drkhwo.lilamd.sfl*` до начала и в конце возвращает: `killall sharedfilelistd` (агент перезапускается сам), копия на место, сверка `cmp` → строка `recents restored: yes|no` в `recent.txt`. Если `no` — Стас чистит лишние пункты «Clear Menu» или вручную.
+- Вручную (Стас): сброс `.md` из Finder на полосу вкладок, в том числе на пустую часть (MAC-4). Синтетического drag-сеанса у шага нет.
+- Что берёт у Стаса: экран, фокус, мышь, клавиатуру, браузер (две вкладки на секунды). Около 2 минут. Источник ввода не меняет.
+- Возврат состояния (`trap … EXIT`): Debug-приложение закрыто, Open Recent восстановлен, файл из Корзины удалён, переднее приложение возвращено, временные файлы удалены.
+- Ожидаемо: `RESULT 21-mac PASS`. Файлы в `E/MAC/fg/`: `app-menu.txt`, `about.png`, `about.txt`, `drag.txt`, `recent-deleted.png`, `recent-moved.png`, `recent-trashed.png`, `recent.txt`, `help.txt`. Вердикт по картинкам — глазами Стаса.
+- Критерии: MAC-2, MAC-3, MAC-4, MAC-5, MAC-6 (снимок), MAC-7 (снимок), MAC-8 (вживую), MAC-10.

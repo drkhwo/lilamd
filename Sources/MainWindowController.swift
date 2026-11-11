@@ -49,7 +49,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Finder, `open -a`, the Open panel, drops: one tab per file (an open file only gets activated).
-    func open(_ urls: [URL]) {
+    /// `present` shows the error alert of a file that could not be opened; tests capture it instead of `runModal`.
+    /// Returns false if any file failed.
+    @discardableResult
+    func open(_ urls: [URL], present: (NSAlert) -> Void = { _ = $0.runModal() }) -> Bool {
         var failed: [(URL, Error)] = []
         var last: OpenDocument?
         for url in urls {
@@ -61,7 +64,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         if let last { store.activate(last.id) }
         if !store.tabs.isEmpty { show() }
-        for (url, error) in failed { Self.makeOpenErrorAlert(url: url, error: error).runModal() }
+        for (url, error) in failed { present(Self.makeOpenErrorAlert(url: url, error: error)) }
+        return failed.isEmpty
     }
 
     /// The text of `MarkdownDocumentError` (TB-21), as DocumentGroup showed it.
@@ -75,6 +79,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     /// File > Close Tab (⌘W). No tabs: the window just goes away.
     func closeActiveTab() {
+        log.info("closeActiveTab: \(self.store.active?.displayName ?? "no tab", privacy: .public)")
         guard let id = store.activeID else {
             window?.orderOut(nil)
             return
