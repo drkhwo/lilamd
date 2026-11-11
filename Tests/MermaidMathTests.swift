@@ -159,4 +159,51 @@ final class MermaidMathTests: XCTestCase {
             XCTAssertGreaterThan(colors.count, 3, "\(name) is not blank")
         }
     }
+
+    /// MER-5: with `mathBlockPreview` on, an edit inside the `$$` block gives the exact Markdown, undo restores the exact
+    /// text, and the file is byte for byte the same after open, edit, undo and save.
+    func testMER5_editInMathBlockAndUndo() async throws {
+        let (doc, store, url) = try await openSample()
+        let h = try XCTUnwrap(self.h)
+        let original = try Samples.text("mermaid-math.md")
+        let before = try Data(contentsOf: url)
+        let f = try await settled(h)
+        XCTAssertTrue(f.blockMathKatex, "precondition: the $$ block renders (mathBlockPreview: true); \(f.raw)")
+        try await Task.sleep(for: .milliseconds(2200)) // past the undo-base refresh (editor.js, 0.6 s and 2 s after load)
+
+        // Unedited: the editor text is the file text and the tab is clean.
+        XCTAssertEqual(h.controller.text, original, "unedited editor text = file text")
+        XCTAssertFalse(doc.isDirty, "rendering must not make the tab dirty")
+
+        // Edit inside the $$ block (the source <code> of the math node, not the KaTeX preview).
+        try await h.focus()
+        try await h.select("{3}", collapseToEnd: true)
+        let inMath = try await h.js("""
+        const n = getSelection().anchorNode; const el = n && (n.nodeType === 1 ? n : n.parentElement);
+        return !!(el && el.closest('[data-type="math-block"]'));
+        """) as? Bool
+        XCTAssertEqual(inMath, true, "the caret is inside the math block")
+        try await h.insertText(" + 0")
+        let edited = original.replacingOccurrences(of: "\\frac{1}{3}\n$$", with: "\\frac{1}{3} + 0\n$$")
+        XCTAssertNotEqual(edited, original)
+        try await h.waitForText { $0.contains("\\frac{1}{3} + 0") }
+        try await Task.sleep(for: .milliseconds(1200)) // the lazy Markdown (editor.js LAZY) arrives by timer
+        XCTAssertEqual(h.controller.text, edited, "exact Markdown after the edit in the $$ block")
+        XCTAssertTrue(doc.isDirty)
+
+        // Undo (the menu path: Edit ▸ Undo calls the controller).
+        try await Task.sleep(for: .milliseconds(300))
+        h.controller.undo()
+        try await h.waitForText { $0 == original }
+        try await Task.sleep(for: .milliseconds(1200))
+        XCTAssertEqual(h.controller.text, original, "exact text after undo")
+
+        // Save and close: the file has the same bytes as before.
+        let saved = await doc.save(prompter: FakePrompter())
+        XCTAssertTrue(saved)
+        XCTAssertEqual(try Data(contentsOf: url), before, "file bytes after edit, undo and save")
+        let closed = await store.close(doc.id)
+        XCTAssertTrue(closed)
+        XCTAssertEqual(try Data(contentsOf: url), before, "file bytes after close")
+    }
 }
