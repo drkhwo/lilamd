@@ -11,7 +11,8 @@ brew install xcodegen            # один раз
 xcodegen generate                # .xcodeproj генерируется из project.yml, в git его нет
 
 # тесты (XCTest, хост-приложение, реальный WKWebView)
-xcodegen generate && xcodebuild -project MDEditor.xcodeproj -scheme MDEditor -derivedDataPath build/dd test
+scripts/test.sh                  # в фоне: без активации, окна за экраном; тесты горячих клавиш окна пропускаются
+scripts/test.sh --foreground     # всё, забирает экран; это прогон для приёмки
 
 # смоук раздела C (+ F1 через настоящее приложение): Release-сборка, установка в /Applications, скриншоты
 scripts/smoke.sh [папка-для-артефактов]      # по умолчанию /tmp/mdeditor-smoke.XXXX, итог в summary.txt

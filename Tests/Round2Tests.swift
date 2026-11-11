@@ -30,6 +30,7 @@ final class Round2Tests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.makeKeyAndOrderFront(nil)
+        TestBackground.park(window)
         defer { window.close() }
         var response: NSApplication.ModalResponse?
         alert.beginSheetModal(for: window) { response = $0 }

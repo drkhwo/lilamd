@@ -150,6 +150,7 @@ final class TabAcceptanceTests: XCTestCase {
 
     /// TB-29: ⌘S in an Untitled tab runs Save As; the tab takes the new name, proxy icon and watcher.
     func testCmdSInUntitledRunsSaveAs() async throws {
+        try requireForeground()
         let target = dir.appending(path: "from-untitled.md")
         fake.saveURL = target
         let doc = store.newUntitled()
@@ -168,6 +169,7 @@ final class TabAcceptanceTests: XCTestCase {
 
     /// TB-29: ⇧⌘S on a file tab writes the new file, renames the tab, leaves the old file as it was.
     func testShiftCmdSSavesUnderNewName() async throws {
+        try requireForeground()
         let a = try file("a.md", "Alpha\n")
         let target = dir.appending(path: "copy.md")
         fake.saveURL = target

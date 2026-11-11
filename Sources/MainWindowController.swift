@@ -43,8 +43,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func show() {
         guard let window else { return }
-        NSApp.activate(ignoringOtherApps: true)
+        TestBackground.activateApp()
         window.makeKeyAndOrderFront(nil)
+        TestBackground.park(window)
     }
 
     /// Finder, `open -a`, the Open panel, drops: one tab per file (an open file only gets activated).

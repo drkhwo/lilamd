@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static var isUnderXCTest: Bool { ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        TestBackground.prepare()
         ZoomMenuSupport.install()
         // Our own tab bar: no system window tabs and no system "Show Next Tab" items (they would take ⌃Tab).
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -33,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        TestBackground.returnFocus()
         // Launched without files → Open panel, as with DocumentGroup (P5). Files from Finder or `open -a` may arrive
         // after this call, so "no tabs yet" is not enough: a launch to open documents is not a default launch.
         let isDefaultLaunch = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true

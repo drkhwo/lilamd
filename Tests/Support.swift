@@ -10,6 +10,15 @@ enum Samples {
     static func text(_ name: String) throws -> String { try MarkdownDocument(data: data(name)).text }
 }
 
+/// Menu key equivalents sent with `NSApp.sendEvent` need a key window, and an inactive app has none.
+/// Such tests run only in the foreground pass: `scripts/test.sh --foreground`.
+@MainActor
+func requireForeground() throws {
+    if TestBackground.isOn {
+        throw XCTSkip("needs foreground (key window): run scripts/test.sh --foreground")
+    }
+}
+
 struct TimeoutError: Error, CustomStringConvertible {
     let description: String
 }
@@ -39,8 +48,9 @@ final class EditorHarness {
                           styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = controller.webView
-        NSApp.activate(ignoringOtherApps: true)
+        TestBackground.activateApp()
         window.makeKeyAndOrderFront(nil)
+        TestBackground.park(window)
         controller.onTextChange = { [unowned self] in self.changes.append($0) }
         controller.openExternally = { [unowned self] in self.opened.append($0) }
         try await waitUntil(20, "editor ready") { self.controller.isReady }
