@@ -69,6 +69,8 @@ In Finder, select any `.md` file and press **Cmd+I**. Under **Open with**, choos
 | Next tab / previous tab | Ctrl+Tab or Cmd+Shift+] / Ctrl+Shift+Tab or Cmd+Shift+[ |
 | Add / delete a table column | Cmd+Shift+= / Cmd+Shift+- |
 
+To open files from Terminal, add `alias lilamd='open -a LilaMD'` to `~/.zshrc`, then run `lilamd notes.md`.
+
 ## Known limitations
 
 - **Tables.** When you change a cell or add a row, only that row changes on disk, but its column padding

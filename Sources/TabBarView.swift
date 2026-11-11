@@ -7,17 +7,24 @@ struct TabBarView: View {
     var openFiles: ([URL]) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(store.tabs) { doc in
-                    TabItem(store: store, document: doc, isActive: doc.id == store.activeID,
-                            isOnly: store.order.count == 1, isLast: store.order.last == doc.id)
-                    Divider()
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(store.tabs) { doc in
+                        TabItem(store: store, document: doc, isActive: doc.id == store.activeID,
+                                isOnly: store.order.count == 1, isLast: store.order.last == doc.id)
+                            .id(doc.id)
+                        Divider()
+                    }
                 }
+            }
+            .onChange(of: store.activeID) { _, id in
+                if let id { proxy.scrollTo(id) }
             }
         }
         .frame(height: 28)
-        .background(.bar)
+        // A plain color, not `.bar`: the material is almost the page color and hid the active tab (1.1).
+        .background(Color(nsColor: EditorPalette.stripBackground))
         .dropDestination(for: URL.self) { urls, _ in
             let files = urls.filter(\.isFileURL)
             guard !files.isEmpty else { return false }
@@ -25,6 +32,46 @@ struct TabBarView: View {
             return true
         }
     }
+}
+
+/// The color of the editor page, shared by the page (`Resources/web/editor.css`, `body`) and the active tab,
+/// so the active tab merges with the document: `#ffffff` in light, `#1d2125` in dark.
+enum EditorPalette {
+    static let pageBackground = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x1d / 255, green: 0x21 / 255, blue: 0x25 / 255, alpha: 1)
+            : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+    }
+}
+
+extension EditorPalette {
+    /// Behind the tabs: darker than the page in light (`#e8e8e8`), lighter in dark (`#2d3237`), so the active tab stands out.
+    static let stripBackground = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x2d / 255, green: 0x32 / 255, blue: 0x37 / 255, alpha: 1)
+            : NSColor(srgbRed: 0xe8 / 255, green: 0xe8 / 255, blue: 0xe8 / 255, alpha: 1)
+    }
+}
+
+/// How a tab looks. A pure value, so tests check it without pixels and without a key window.
+struct TabAppearance: Equatable {
+    let isActive: Bool
+    let isKeyWindow: Bool
+
+    /// Active: the page color. Inactive: clear, the strip shows through.
+    var backgroundNSColor: NSColor? { isActive ? EditorPalette.pageBackground : nil }
+    /// 2 pt line at the top of the active tab: accent in the key window, gray otherwise. None on inactive tabs.
+    var stripeNSColor: NSColor? { isActive ? (isKeyWindow ? .controlAccentColor : .tertiaryLabelColor) : nil }
+    var weight: Font.Weight { isActive ? .semibold : .regular }
+
+    var background: Color { backgroundNSColor.map(Color.init(nsColor:)) ?? .clear }
+    var stripe: Color? { stripeNSColor.map(Color.init(nsColor:)) }
+}
+
+/// What the tab tells VoiceOver and UI scripts.
+enum TabAccessibility {
+    static func identifier(_ displayName: String) -> String { "tab:\(displayName)" }
+    static func traits(isActive: Bool) -> AccessibilityTraits { isActive ? .isSelected : [] }
 }
 
 /// What a dragged tab carries: its id with a prefix, so `EditorWebView` refuses it as text.
@@ -39,7 +86,7 @@ enum TabDrag {
     }
 }
 
-private struct TabItem: View {
+struct TabItem: View {
     let store: TabStore
     @ObservedObject var document: OpenDocument
     let isActive: Bool
@@ -47,6 +94,9 @@ private struct TabItem: View {
     let isLast: Bool
     @State private var hovering = false
     @State private var targeted = false
+    @Environment(\.controlActiveState) private var controlActiveState
+
+    private var appearance: TabAppearance { TabAppearance(isActive: isActive, isKeyWindow: controlActiveState == .key) }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -63,19 +113,29 @@ private struct TabItem: View {
                 }
             }
             .frame(width: 14, height: 14)
-            Text(document.displayName)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(isActive ? .primary : .secondary)
+            // The hidden semibold copy reserves the width, so the tab does not resize when it becomes active.
+            ZStack {
+                Text(document.displayName).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
+                    .hidden().accessibilityHidden(true)
+                Text(document.displayName).fontWeight(appearance.weight).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(isActive ? .primary : .secondary)
+            }
             Spacer(minLength: 14)
         }
         .padding(.leading, 6)
         .frame(minWidth: 90, maxWidth: 200, maxHeight: .infinity)
-        .background(isActive ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+        .background(appearance.background)
+        .overlay(alignment: .top) {
+            if let stripe = appearance.stripe { Rectangle().fill(stripe).frame(height: 2) }
+        }
         .overlay(alignment: .leading) {
             if targeted { Rectangle().fill(Color.accentColor).frame(width: 2) }
         }
         .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(document.displayName)
+        .accessibilityIdentifier(TabAccessibility.identifier(document.displayName))
+        .accessibilityAddTraits(TabAccessibility.traits(isActive: isActive))
         .onTapGesture { store.activate(document.id) }
         .onHover { hovering = $0 }
         .help(document.url?.path ?? document.displayName)

@@ -1,4 +1,5 @@
 html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+/* Keep in sync with EditorPalette.pageBackground (Sources/TabBarView.swift): the active tab uses the same colors. */
 body { background: #ffffff; }
 body.dark { background: #1d2125; }
 #editor { height: 100%; }
