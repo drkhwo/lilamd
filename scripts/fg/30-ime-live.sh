@@ -23,7 +23,7 @@ IMETOOL="$WORK/imetool"
 AUTOSAVE_WAIT=3.5   # the app autosaves 2 s after the last edit
 STEP=0.15           # pause between keys, like a person
 
-if pgrep -x xcodebuild >/dev/null; then echo "RESULT 30-ime-live FAIL another xcodebuild is running"; exit 2; fi
+if pgrep -f "xcodebuild.*MDEditor" >/dev/null; then echo "RESULT 30-ime-live FAIL another xcodebuild is running"; exit 2; fi
 rm -rf "$OUT" && mkdir -p "$OUT/shots" "$OUT/files"
 RUN="$OUT/run.txt"; : > "$RUN"
 say() { echo "$*" | tee -a "$RUN"; }

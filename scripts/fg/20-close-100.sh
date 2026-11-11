@@ -21,7 +21,7 @@ FILES=140          # spare tabs for runs that do not count
 MAX_SKIPPED=30
 US_SOURCE=com.apple.keylayout.US
 
-if pgrep -x xcodebuild >/dev/null; then echo "RESULT 20-close-100-$MODE FAIL another xcodebuild is running"; exit 2; fi
+if pgrep -f "xcodebuild.*MDEditor" >/dev/null; then echo "RESULT 20-close-100-$MODE FAIL another xcodebuild is running"; exit 2; fi
 
 rm -rf "$OUT" && mkdir -p "$OUT/shots"
 RUN="$OUT/run.txt"

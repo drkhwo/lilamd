@@ -12,7 +12,7 @@ BIN="$APP/Contents/MacOS/LilaMD"
 WORK="$(mktemp -d /tmp/lilamd-tabfg.XXXX)"
 FAILS=()
 
-if pgrep -x xcodebuild >/dev/null; then echo "RESULT 10-tab-screenshots FAIL another xcodebuild is running"; exit 2; fi
+if pgrep -f "xcodebuild.*MDEditor" >/dev/null; then echo "RESULT 10-tab-screenshots FAIL another xcodebuild is running"; exit 2; fi
 
 FRONT_BID="$(osascript -e 'tell application "System Events" to get bundle identifier of first application process whose frontmost is true' 2>/dev/null || true)"
 quit_app() { pkill -f "$BIN" 2>/dev/null; for _ in $(seq 1 30); do pgrep -f "$BIN" >/dev/null || return 0; sleep 0.2; done; }

@@ -21,7 +21,7 @@ SFL_DIR="$HOME/Library/Application Support/com.apple.sharedfilelist/com.apple.LS
 SFL_BACKUP="$WORK/recents-backup"
 FAILS=()
 
-if pgrep -x xcodebuild >/dev/null; then echo "RESULT 21-mac FAIL another xcodebuild is running"; exit 2; fi
+if pgrep -f "xcodebuild.*MDEditor" >/dev/null; then echo "RESULT 21-mac FAIL another xcodebuild is running"; exit 2; fi
 rm -rf "$OUT" && mkdir -p "$OUT" "$SFL_BACKUP"
 DRAG="$OUT/drag.txt"; RECENT="$OUT/recent.txt"; HELP="$OUT/help.txt"
 : > "$DRAG"; : > "$RECENT"; : > "$HELP"

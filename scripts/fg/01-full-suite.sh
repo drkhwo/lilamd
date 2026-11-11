@@ -5,7 +5,7 @@ set -uo pipefail
 cd "$(dirname "$0")/../.."
 E=/Users/stanislav/dev/QA/2026-11-11-lilamd-1.0
 mkdir -p "$E/fg"
-if pgrep -x xcodebuild >/dev/null; then echo "RESULT 01-full-suite FAIL another xcodebuild is running"; exit 2; fi
+if pgrep -f "xcodebuild.*MDEditor" >/dev/null; then echo "RESULT 01-full-suite FAIL another xcodebuild is running"; exit 2; fi
 scripts/test.sh --foreground > "$E/fg/test.log" 2>&1
 code=$?
 summary=$(grep -E "Executed [0-9]+ tests" "$E/fg/test.log" | tail -1 | sed 's/^[[:space:]]*//')
