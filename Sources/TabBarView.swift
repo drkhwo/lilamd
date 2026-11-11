@@ -45,22 +45,24 @@ struct TabBarView: View {
     }
 }
 
-/// The color of the editor page, so the active tab merges with the document: `#ffffff` in light, `#24292e` in dark.
-/// The page is painted by Vditor's `pre.vditor-reset` (its `--panel-background-color`), which fills the web view;
-/// `Resources/web/editor.css` gives `body` the same colors. `TabAppearanceTests` checks this against the rendered page.
+/// The color of the editor page, so the active tab merges with the document: `#fafbfc` in light, `#2f363d` in dark.
+/// The page is Vditor's editor root (`pre.vditor-reset`, `.vditor-sv`), which fills the web view. Vditor paints it
+/// `--textarea-background-color` only while focused in an active window, `--panel-background-color` otherwise;
+/// `Resources/web/editor.css` pins it, and `body`, to these colors in every state. `TabAppearanceTests` checks the
+/// computed page background against this constant.
 enum EditorPalette {
     static let pageBackground = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0x24 / 255, green: 0x29 / 255, blue: 0x2e / 255, alpha: 1)
-            : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+            ? NSColor(srgbRed: 0x2f / 255, green: 0x36 / 255, blue: 0x3d / 255, alpha: 1)
+            : NSColor(srgbRed: 0xfa / 255, green: 0xfb / 255, blue: 0xfc / 255, alpha: 1)
     }
 }
 
 extension EditorPalette {
-    /// Behind the tabs: darker than the page in light (`#e8e8e8`), lighter in dark (`#2d3237`), so the active tab stands out.
+    /// Behind the tabs: darker than the page (`#e8e8e8` light, `#1d2125` dark), so the active tab stands out.
     static let stripBackground = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0x2d / 255, green: 0x32 / 255, blue: 0x37 / 255, alpha: 1)
+            ? NSColor(srgbRed: 0x1d / 255, green: 0x21 / 255, blue: 0x25 / 255, alpha: 1)
             : NSColor(srgbRed: 0xe8 / 255, green: 0xe8 / 255, blue: 0xe8 / 255, alpha: 1)
     }
 }
