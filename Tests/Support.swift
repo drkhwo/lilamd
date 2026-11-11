@@ -41,9 +41,14 @@ final class EditorHarness {
     var changes: [String] = []
     var opened: [URL] = []
 
-    init(text: String, mode: EditorMode = .visual, directory: URL? = Samples.dir) async throws {
+    convenience init(text: String, mode: EditorMode = .visual, directory: URL? = Samples.dir) async throws {
+        try await self.init(controller: EditorController(text: text, mode: mode, documentDirectory: directory))
+    }
+
+    /// Hosts a controller that somebody else made (e.g. `OpenDocument.makeController`).
+    init(controller: EditorController) async throws {
         ZoomMenuSupport.install()
-        controller = EditorController(text: text, mode: mode, documentDirectory: directory)
+        self.controller = controller
         window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 900, height: 700),
                           styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -51,7 +56,8 @@ final class EditorHarness {
         TestBackground.activateApp()
         window.makeKeyAndOrderFront(nil)
         TestBackground.park(window)
-        controller.onTextChange = { [unowned self] in self.changes.append($0) }
+        let previous = controller.onTextChange
+        controller.onTextChange = { [unowned self] in self.changes.append($0); previous?($0) }
         controller.openExternally = { [unowned self] in self.opened.append($0) }
         try await waitUntil(20, "editor ready") { self.controller.isReady }
     }

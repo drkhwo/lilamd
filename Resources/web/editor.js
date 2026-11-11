@@ -67,6 +67,10 @@
   // synchronously inside some input events. Both are O(document) per key and make big files lag.
   const PREVIEW_RE = /<pre class="vditor-ir__preview"[^>]*>[\s\S]*?<\/pre>/g;
   const LAZY = "\u0000mdedit-lazy\u0000";
+  // An IME composition is on (between compositionstart and compositionend).
+  let composing = false;
+  document.addEventListener("compositionstart", () => { composing = true; }, true);
+  document.addEventListener("compositionend", () => { composing = false; }, true);
   let inInputEvent = false;
   document.addEventListener("input", () => { inInputEvent = true; setTimeout(() => { inInputEvent = false; }, 0); }, true);
   window.addEventListener("input", () => { inInputEvent = false; });
@@ -128,11 +132,14 @@
     };
     // Done while idle (after highlighting has settled) so the first keystroke does not pay for it;
     // the keydown hook covers typing that starts before that.
+    // refreshUndoBase puts a marker node at the caret and restores the selection. That ends an IME composition
+    // (WebKit drops the marked text and fires compositionend), so it never runs while one is on: the keys
+    // of a composition (keydown 229, isComposing true) and the timers wait for the next idle moment.
     let refreshedIdle = false;
-    for (const ms of [600, 2000]) setTimeout(() => { if (v === vditor) { refreshUndoBase(); refreshedIdle = true; } }, ms);
+    for (const ms of [600, 2000]) setTimeout(() => { if (v === vditor && !composing) { refreshUndoBase(); refreshedIdle = true; } }, ms);
     for (const m of ["ir", "sv"]) {
       if (!inner[m]) continue;
-      inner[m].element.addEventListener("keydown", () => { if (!refreshedIdle) refreshUndoBase(); }, true);
+      inner[m].element.addEventListener("keydown", (e) => { if (!refreshedIdle && !composing && !e.isComposing) refreshUndoBase(); }, true);
     }
     // Typing with the caret directly in the editor root (e.g. after Cmd+Down past a final code block)
     // makes Vditor re-render the whole document through Lute on the next keystrokes (~1 s on big files).
