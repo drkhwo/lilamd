@@ -1,7 +1,8 @@
 html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-/* Keep in sync with EditorPalette.pageBackground (Sources/TabBarView.swift): the active tab uses the same colors. */
+/* The visible page is Vditor's pre.vditor-reset (--panel-background-color: #fff / #24292e), which fills the view.
+   body gets the same colors. Keep in sync with EditorPalette.pageBackground (Sources/TabBarView.swift): the active tab uses them. */
 body { background: #ffffff; }
-body.dark { background: #1d2125; }
+body.dark { background: #24292e; }
 #editor { height: 100%; }
 .vditor { border: none !important; }
 .vditor-toolbar { display: none !important; }

@@ -45,12 +45,13 @@ struct TabBarView: View {
     }
 }
 
-/// The color of the editor page, shared by the page (`Resources/web/editor.css`, `body`) and the active tab,
-/// so the active tab merges with the document: `#ffffff` in light, `#1d2125` in dark.
+/// The color of the editor page, so the active tab merges with the document: `#ffffff` in light, `#24292e` in dark.
+/// The page is painted by Vditor's `pre.vditor-reset` (its `--panel-background-color`), which fills the web view;
+/// `Resources/web/editor.css` gives `body` the same colors. `TabAppearanceTests` checks this against the rendered page.
 enum EditorPalette {
     static let pageBackground = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0x1d / 255, green: 0x21 / 255, blue: 0x25 / 255, alpha: 1)
+            ? NSColor(srgbRed: 0x24 / 255, green: 0x29 / 255, blue: 0x2e / 255, alpha: 1)
             : NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
     }
 }
