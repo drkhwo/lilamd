@@ -176,14 +176,15 @@ recent_case() {  # recent_case <name> <what to do with the file> <png>
   printf '# %s\n' "$name" > "$f"
   launch YES "$f" || return
   for _ in $(seq 1 20); do "$TOOL" tabs "$PID" | grep -q "^tab:$name " && break; sleep 0.25; done
-  quit_app
+  # The file goes away while the app runs with the entry in its Open Recent list. After a restart the system drops
+  # entries of missing files by itself, so the menu would never offer the stale entry. The tab is closed first:
+  # picking the entry of an open file only activates its tab.
+  "$TOOL" menu "$PID" File "Close Tab"; sleep 1
   case "$how" in
     delete) rm -f "$f";;
     move) mkdir -p "$WORK/moved"; mv "$f" "$WORK/moved/$name";;
     trash) mv "$f" "$HOME/.Trash/$name";;
   esac
-  launch YES || return
-  "$TOOL" press "$PID" Cancel >/dev/null 2>&1; sleep 0.5      # the Open panel of a launch without files
   "$TOOL" menu "$PID" File "Open Recent" "$name" || { echo "$name ($how): not in Open Recent" >> "$RECENT"; FAILS+=("Open Recent: $name missing"); return; }
   sleep 1.5
   "$TOOL" texts "$PID" > "$WORK/texts.txt"
