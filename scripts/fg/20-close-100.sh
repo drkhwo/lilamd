@@ -65,7 +65,8 @@ log stream --style compact --level info --predicate 'subsystem == "com.drkhwo.li
 LOGPID=$!
 sleep 1
 
-open -n -a "$APP" --args -MDEditorRecordsRecents NO "${files[@]}"
+# Files go BEFORE --args, else the app gets no open event (it shows an Open panel instead).
+open -n -a "$APP" "${files[@]}" --args -MDEditorRecordsRecents NO
 for _ in $(seq 1 40); do PID="$(pgrep -n -f "$BIN" || true)"; [ -n "$PID" ] && break; sleep 0.25; done
 [ -n "$PID" ] || { echo "RESULT 20-close-100-$MODE FAIL Debug app did not start"; exit 1; }
 for _ in $(seq 1 60); do [ "$("$TOOL" tabs "$PID" 2>/dev/null | wc -l)" -ge "$FILES" ] && break; sleep 0.5; done

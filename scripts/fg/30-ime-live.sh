@@ -110,7 +110,7 @@ for si in "${!S_NAME[@]}"; do
     cp "$f" "$OUT/files/${name}-${place}.before.md"
     quit_app; PID=""
     "$IMETOOL" select com.apple.keylayout.US 2>/dev/null   # the window opens in a neutral source; ⌘↓ does not depend on it
-    open -n -a "$APP" --args -MDEditorRecordsRecents NO "$f"
+    open -n -a "$APP" "$f" --args -MDEditorRecordsRecents NO
     for _ in $(seq 1 40); do PID="$(pgrep -n -f "$BIN" || true)"; [ -n "$PID" ] && break; sleep 0.25; done
     if [ -z "$PID" ]; then fail=$((fail + 1)); say "FAIL $name/$place: Debug app did not start"; continue; fi
     for _ in $(seq 1 40); do [ "$("$FGTOOL" tabs "$PID" 2>/dev/null | wc -l)" -ge 1 ] && break; sleep 0.5; done
@@ -153,7 +153,7 @@ done
 quit_app; PID=""
 f="$WORK/hold.md"; printf 'Intro\n\nlast paragraph\n' > "$f"; cp "$f" "$OUT/files/hold.before.md"
 "$IMETOOL" select com.apple.keylayout.US 2>/dev/null; wait_source com.apple.keylayout.US
-open -n -a "$APP" --args -MDEditorRecordsRecents NO "$f"
+open -n -a "$APP" "$f" --args -MDEditorRecordsRecents NO
 for _ in $(seq 1 40); do PID="$(pgrep -n -f "$BIN" || true)"; [ -n "$PID" ] && break; sleep 0.25; done
 if [ -n "$PID" ]; then
   sleep 3; "$FGTOOL" activate "$PID" 2>/dev/null

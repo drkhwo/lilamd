@@ -7,6 +7,9 @@
 //   windows <pid>                       "<CGWindowID> <x> <y> <w> <h> <layer> <name>" for each on-screen window
 //   frame <pid>                         "<x> <y> <w> <h>" of the app's AX main window (top-left origin)
 //   tabs <pid>                          "tab:<name> selected=<bool> <x> <y> <w> <h>" per tab, in screen order
+//   hold-focus <seconds>                a window-less accessory process takes the focus and keeps it (the app under test becomes
+//                                       inactive without Stage Manager moving its window into the side strip)
+//   dump <pid>                          the whole AX tree of every window: role, subrole, identifier, title, selected, frame
 //   edited <pid>                        true|false|unknown: the "edited" mark of the main window (close button AXEdited)
 //   hit <x> <y>                         "<pid> <role>" of the AX element at a screen point
 //   texts <pid>                         "<window subrole>: <text>" for the static texts of every window (alerts, panels)
@@ -99,6 +102,22 @@ case "tabs":
         rows.append((p.x, "\(id) selected=\(sel) \(Int(p.x)) \(Int(p.y)) \(Int(s.width)) \(Int(s.height))"))
     }
     for r in rows.sorted(by: { $0.0 < $1.0 }) { print(r.1) }
+case "hold-focus":
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    app.activate(ignoringOtherApps: true)
+    RunLoop.current.run(until: Date(timeIntervalSinceNow: Double(args.count > 1 ? args[1] : "30") ?? 30))
+case "dump":
+    let app = AXUIElementCreateApplication(pidArg())
+    func dump(_ e: AXUIElement, _ depth: Int) {
+        guard depth < 40 else { return }
+        let f = { (n: String) in (attr(e, n) as? String).map { $0.isEmpty ? "" : $0 } ?? "" }
+        let p = point(e), s = size(e)
+        let sel = (attr(e, kAXSelectedAttribute) as? Bool).map { " selected=\($0)" } ?? ""
+        print(String(repeating: "  ", count: depth) + "\(f(kAXRoleAttribute)) sub=\(f(kAXSubroleAttribute)) id=\(f("AXIdentifier")) title=\(f(kAXTitleAttribute)) desc=\(f(kAXDescriptionAttribute))\(sel) [\(Int(p.x)),\(Int(p.y)) \(Int(s.width))x\(Int(s.height))]")
+        for c in children(e) { dump(c, depth + 1) }
+    }
+    for w in attr(app, kAXWindowsAttribute) as? [AXUIElement] ?? [] { dump(w, 0) }
 case "edited":
     guard let w = mainWindow(pidArg()) else { fail("no window") }
     let close = attr(w, kAXCloseButtonAttribute).map { $0 as! AXUIElement }

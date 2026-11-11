@@ -35,6 +35,14 @@ fi
 names=(alpha.md bravo.md charlie.md delta.md echo.md foxtrot.md golf-notes-with-a-very-long-file-name-for-truncation.md hotel.md india.md juliet.md)
 for n in "${names[@]}"; do printf '# %s\n\nbody\n' "$n" > "$WORK/$n"; done
 
+TOOL="$WORK/fgtool"
+if ! swiftc -O scripts/fg/fgtool.swift -o "$TOOL" > "$OUT/fgtool-build.log" 2>&1; then
+  echo "RESULT 10-tab-screenshots FAIL fgtool did not build, see $OUT/fgtool-build.log"; exit 1
+fi
+app_pid() { pgrep -n -f "$BIN"; }
+HOLD=""
+release_focus() { [ -n "$HOLD" ] && kill "$HOLD" 2>/dev/null; HOLD=""; }
+
 wid() { swift scripts/windowid.swift LilaMD 2>/dev/null | head -1 | awk '{print $1}'; }
 
 # launch <appearance> <count>: fresh process with <count> tabs; the last opened file is the active tab.
@@ -42,12 +50,15 @@ launch() {
   quit_app
   local files=() i
   for ((i = 0; i < $2; i++)); do files+=("$WORK/${names[$i]}"); done
-  open -n -a "$APP" --args -MDEditorAppearance "$1" -MDEditorRecordsRecents NO "${files[@]}"
+  # Files go BEFORE --args: after it they are plain argv, the app gets no open event and shows an Open panel instead of its window.
+  open -n -a "$APP" "${files[@]}" --args -MDEditorAppearance "$1" -MDEditorRecordsRecents NO
   for _ in $(seq 1 40); do [ -n "$(wid)" ] && break; sleep 0.5; done
   sleep 2
 }
-activate_app() { open -a "$APP"; sleep 1.5; }
-inactivate_app() { open -a Finder; sleep 1.5; }   # the app window stays on screen, but is not key
+activate_app() { release_focus; open -a "$APP"; sleep 1.5; }
+# The app window stays on screen, but is not key. Not Finder: with Stage Manager on, activating another app with windows
+# moves the window into the side strip (a 228 px thumbnail). A window-less accessory process takes the focus instead.
+inactivate_app() { "$TOOL" hold-focus 20 & HOLD=$!; disown "$HOLD" 2>/dev/null; sleep 1.5; }
 shoot() {  # shoot <file>
   local id; id="$(wid)"
   if [ -z "$id" ]; then FAILS+=("$1: no window"); return; fi
@@ -72,18 +83,8 @@ done
 
 # TAB-3: the real AX tree. One selected tab, every tab has an identifier tab:<name>.
 launch light 3; activate_app
-osascript > "$OUT/ax-tabs.txt" 2>&1 <<'AS'
-tell application "System Events" to tell process "LilaMD"
-  set out to ""
-  repeat with e in (entire contents of window 1)
-    try
-      set i to value of attribute "AXIdentifier" of e
-      if i starts with "tab:" then set out to out & i & " selected=" & (value of attribute "AXSelected" of e) & linefeed
-    end try
-  end repeat
-  return out
-end tell
-AS
+"$TOOL" tabs "$(app_pid)" > "$OUT/ax-tabs.txt" 2>&1
+"$TOOL" dump "$(app_pid)" > "$OUT/ax-tree.txt" 2>&1
 sel=$(grep -c "selected=true" "$OUT/ax-tabs.txt" || true)
 ids=$(grep -c "^tab:" "$OUT/ax-tabs.txt" || true)
 { [ "$sel" = "1" ] && [ "$ids" = "3" ]; } || FAILS+=("AX: $ids tab ids, $sel selected (see ax-tabs.txt; need 3 and 1)")

@@ -65,7 +65,7 @@ fi
 launch() {  # launch <records-recents YES|NO> [files…]
   quit_app
   local rec="$1"; shift
-  open -n -a "$APP" --args -MDEditorRecordsRecents "$rec" "$@"
+  open -n -a "$APP" "$@" --args -MDEditorRecordsRecents "$rec"
   for _ in $(seq 1 40); do PID="$(pgrep -n -f "$BIN" || true)"; [ -n "$PID" ] && break; sleep 0.25; done
   [ -n "$PID" ] || { FAILS+=("app did not start"); return 1; }
   sleep 3
