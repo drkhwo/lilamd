@@ -107,6 +107,11 @@ final class MermaidMathTests: XCTestCase {
         try result.write(to: Self.evidence.appending(path: "result.txt"), atomically: true, encoding: .utf8)
         print("MER-1 RESULT\n\(result)")
 
+        // Decision 11.11 (Stas): mathBlockPreview is on, so all three render.
+        XCTAssertTrue(f.mermaidSVG, "mermaid block must render to svg; \(f.raw)")
+        XCTAssertTrue(f.blockMathKatex, "block $$ math must render (mathBlockPreview: true); \(f.raw)")
+        XCTAssertTrue(f.inlineMathKatex, "inline $ math must render; \(f.raw)")
+
         // MER-2: nothing blocked, nothing left the app.
         let bad = h.controller.requestLog.filter { $0.hasPrefix("blocked") || $0.hasPrefix("navigation refused") || $0.hasPrefix("new window refused") }
         XCTAssertTrue(bad.isEmpty, "blocked or refused requests: \(bad)")

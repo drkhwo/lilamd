@@ -43,7 +43,7 @@
         mode: "editor",
         actions: [],
         delay: 0,
-        markdown: { sanitize: true, linkBase: "mdedit://doc/", codeBlockPreview: true, mathBlockPreview: false },
+        markdown: { sanitize: true, linkBase: "mdedit://doc/", codeBlockPreview: true, mathBlockPreview: true },
         hljs: { enable: true, style: hljsStyle(), lineNumber: false },
         theme: { current: dark ? "dark" : "light" },
       },
