@@ -58,9 +58,10 @@ func mainWindow(_ pid: pid_t) -> AXUIElement? {
     // The tab window is the largest one (About and alerts are small).
     return windows.max { size($0).width * size($0).height < size($1).width * size($1).height }
 }
+let eventSource = CGEventSource(stateID: .hidSystemState)
 func post(_ e: CGEvent?) { e?.post(tap: .cghidEventTap); usleep(15_000) }
 func mouse(_ type: CGEventType, _ p: CGPoint, clicks: Int64 = 1) {
-    let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: p, mouseButton: .left)
+    let e = CGEvent(mouseEventSource: eventSource, mouseType: type, mouseCursorPosition: p, mouseButton: .left)
     e?.setIntegerValueField(.mouseEventClickState, value: clicks)
     post(e)
 }
@@ -207,8 +208,9 @@ case "type":
     let text = Array((args.count > 1 ? args[1] : "").utf16)
     for unit in text {
         for down in [true, false] {
-            let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
+            let e = CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: down)
             var u = unit
+            e?.flags = []   // never inherit a modifier that an earlier `key` left in the session state
             e?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &u)
             post(e)
         }
@@ -226,10 +228,23 @@ case "key":
         default: fail("modifier \(m)")
         }
     }
+    // Real modifier key events around the key: a bare flag on the key event leaves WebKit and the session state unsure.
+    var held: [(CGKeyCode, CGEventFlags)] = []
+    var acc: CGEventFlags = []
+    for (m, kc, f) in [("cmd", 55, CGEventFlags.maskCommand), ("shift", 56, .maskShift), ("opt", 58, .maskAlternate), ("ctrl", 59, .maskControl)]
+        where args.dropFirst(2).contains(m) {
+        acc.insert(f); held.append((CGKeyCode(kc), acc))
+        let e = CGEvent(keyboardEventSource: eventSource, virtualKey: CGKeyCode(kc), keyDown: true)
+        e?.type = .flagsChanged; e?.flags = acc; post(e)
+    }
     for down in [true, false] {
-        let e = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+        let e = CGEvent(keyboardEventSource: eventSource, virtualKey: code, keyDown: down)
         e?.flags = flags
         post(e)
+    }
+    for (kc, _) in held.reversed() {
+        let e = CGEvent(keyboardEventSource: eventSource, virtualKey: kc, keyDown: false)
+        e?.type = .flagsChanged; e?.flags = []; post(e)
     }
 case "source-get":
     let s = TISCopyCurrentKeyboardInputSource().takeRetainedValue()

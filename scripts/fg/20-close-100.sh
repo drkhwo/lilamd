@@ -2,7 +2,7 @@
 # FOREGROUND step 20: Close Tab on screen, 100 counted runs (CLOSE-4, CLOSE-5).
 #   scripts/fg/20-close-100.sh            ⌘W (CGEvent) and File ▸ Close Tab (AX press), alternating → E/CLOSE/fg/
 #   scripts/fg/20-close-100.sh cmdw       ⌘W only, 100 counted runs → E/CLOSE/fg-cmdw/
-# Each run: click into the editor, ⌘↓, type a marker, pause 0.3 s or 2.0 s (alternating), then close. Checks: the tab "tab:<name>" is gone from the AX tree and the file has the marker.
+# Each run: click into the editor, ⌘↓, type a marker (its own line), pause 0.3 s or 2.0 s (alternating), then close. Checks: the tab "tab:<name>" is gone from the AX tree and the file has the marker.
 # Takes the screen, the focus, the mouse, the keyboard and the input source (U.S. for ⌘W). Run only from the
 # FOREGROUND.md batch. Uses the Debug build in build/dd; never touches /Applications/LilaMD.app.
 # On exit: the Debug app quits, the input source and the front app come back, log stream stops, temp files go.
@@ -89,7 +89,7 @@ while [ $((pass + fail)) -lt $TARGET ]; do
   file="$WORK/$name"
   if [ "$MODE" = cmdw ] || [ $((run % 2)) -eq 1 ]; then how=cmdW; else how=menu; fi
   if [ $(((run / 2) % 2)) -eq 0 ]; then pause=0.3; else pause=2.0; fi
-  marker=" e$run"
+  marker="e$run"   # no leading space: Markdown drops it, the file would not contain it
   if ! "$TOOL" activate "$PID" 2>/dev/null; then
     skipped=$((skipped + 1)); say "run $run $name SKIP app not frontmost"; continue
   fi
@@ -112,7 +112,7 @@ while [ $((pass + fail)) -lt $TARGET ]; do
   if [ "$how" = cmdW ]; then "$TOOL" key 13 cmd; else "$TOOL" menu "$PID" File "Close Tab"; fi
   gone=no
   for _ in $(seq 1 50); do tab_open "$name" || { gone=yes; break; }; sleep 0.1; done
-  has=no; grep -qF -- "$marker" "$file" && has=yes
+  has=no; grep -qxF -- "$marker" "$file" && has=yes
   sha="$(shasum -a 256 "$file" | cut -c1-12)"
   if [ $gone = yes ] && [ $has = yes ]; then
     pass=$((pass + 1)); say "run $run $name $how pause=$pause PASS sha=$sha"
