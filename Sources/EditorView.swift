@@ -35,7 +35,11 @@ struct EditorView: NSViewRepresentable {
         // Switching the mode recreates Vditor and drops its undo history: only the visible tab follows it now,
         // a hidden tab gets the mode when it is shown again.
         controller.setMode(mode)
-        if !context.coordinator.wasActive { controller.focus() }
+        // After this update pass, not inside it: SwiftUI may update the new tab before it hides the old one
+        // (a layout pass pulls it first), and hiding the old tab's editor then moves the focus to the toolbar.
+        if !context.coordinator.wasActive {
+            DispatchQueue.main.async { MainActor.assumeIsolated { controller.focus() } }
+        }
     }
 }
 
