@@ -7,7 +7,7 @@ formatted view — the Markdown markers of a block appear only while the cursor 
 
 LilaMD does one thing: it opens Markdown files and edits them. It has no vault, no plugins, no sidebar and no settings.
 
-**Version 0.5** — an early release. It works for everyday notes and docs. Read the
+**Version 1.0** — the first App Store release. It works for everyday notes and docs. Read the
 [known limitations](#known-limitations) before you use it on files that matter.
 
 ## Features
@@ -68,6 +68,8 @@ In Finder, select any `.md` file and press **Cmd+I**. Under **Open with**, choos
 | New tab / Open file / Close tab | Cmd+N / Cmd+O / Cmd+W |
 | Next tab / previous tab | Ctrl+Tab or Cmd+Shift+] / Ctrl+Shift+Tab or Cmd+Shift+[ |
 | Add / delete a table column | Cmd+Shift+= / Cmd+Shift+- |
+
+To open files from Terminal, add `alias lilamd='open -a LilaMD'` to `~/.zshrc`, then run `lilamd notes.md`.
 
 ## Known limitations
 

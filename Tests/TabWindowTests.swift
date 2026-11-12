@@ -157,6 +157,7 @@ final class TabWindowTests: XCTestCase {
 
     /// TB-10, TB-12: ⌘W closes the active tab; after the last one the window is hidden.
     func testCmdWClosesActiveTabThenHidesWindow() async throws {
+        try requireForeground()
         let a = try file("a.md", "Alpha\n")
         let b = try file("b.md", "Beta\n")
         wc.open([a, b])
@@ -261,6 +262,7 @@ final class TabWindowTests: XCTestCase {
     /// TB-17, TB-18: ⌘Z from the menu acts on the active tab only; A's undo history and scroll position
     /// survive a trip to B and back.
     func testUndoGoesToActiveTabAndSurvivesSwitch() async throws {
+        try requireForeground()
         OpenDocument.autosaveDelay = .seconds(60)
         let long = (1...200).map { "Paragraph \($0) of a long file." }.joined(separator: "\n\n") + "\n"
         let a = try file("a.md", long)
@@ -341,6 +343,7 @@ final class TabWindowTests: XCTestCase {
 
     /// ⌘S writes the active tab now; its file on disk gets the edit, the tab becomes clean.
     func testCmdSSavesActiveTab() async throws {
+        try requireForeground()
         OpenDocument.autosaveDelay = .seconds(60)
         let a = try file("a.md", "Alpha\n")
         wc.open([a])
@@ -389,6 +392,7 @@ final class TabWindowTests: XCTestCase {
 
     /// TB-11 (changed by Stas 05.11): ⌘W on a dirty file tab writes the file and closes the tab, no question.
     func testCmdWWritesDirtyFileTabWithoutQuestion() async throws {
+        try requireForeground()
         OpenDocument.autosaveDelay = .seconds(60)
         let a = try file("a.md", "Alpha\n")
         wc.open([a])
@@ -406,6 +410,7 @@ final class TabWindowTests: XCTestCase {
     /// A file over 2000 lines posts typed text 800 ms late. ⌘W right after typing still writes those keys:
     /// the close reads the page's text before it writes (flush).
     func testCmdWRightAfterTypingInBigFileWritesTheKeys() async throws {
+        try requireForeground()
         OpenDocument.autosaveDelay = .seconds(60)
         let lines = (1...2100).map { "Line \($0)" }.joined(separator: "\n")
         let a = try file("big.md", "Alpha\n\n" + lines + "\n")

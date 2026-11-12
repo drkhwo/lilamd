@@ -6,18 +6,36 @@ struct TabBarView: View {
     @ObservedObject var store: TabStore
     var openFiles: ([URL]) -> Void
 
+    /// Width of the tabs; the rest of the visible strip is `WindowDragArea` (1.3).
+    @State private var tabsWidth: CGFloat = 0
+
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(store.tabs) { doc in
-                    TabItem(store: store, document: doc, isActive: doc.id == store.activeID,
-                            isOnly: store.order.count == 1, isLast: store.order.last == doc.id)
-                    Divider()
+        GeometryReader { strip in
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        HStack(spacing: 0) {
+                            ForEach(store.tabs) { doc in
+                                TabItem(store: store, document: doc, isActive: doc.id == store.activeID,
+                                        isOnly: store.order.count == 1, isLast: store.order.last == doc.id)
+                                    .id(doc.id)
+                                Divider()
+                            }
+                        }
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tabsWidth = $0 }
+                        // Next to the tabs, never under them: a tab drag must not move the window.
+                        WindowDragArea()
+                            .frame(width: max(0, strip.size.width - tabsWidth))
+                    }
+                }
+                .onChange(of: store.activeID) { _, id in
+                    if let id { proxy.scrollTo(id) }
                 }
             }
         }
         .frame(height: 28)
-        .background(.bar)
+        // A plain color, not `.bar`: the material is almost the page color and hid the active tab (1.1).
+        .background(Color(nsColor: EditorPalette.stripBackground))
         .dropDestination(for: URL.self) { urls, _ in
             let files = urls.filter(\.isFileURL)
             guard !files.isEmpty else { return false }
@@ -25,6 +43,49 @@ struct TabBarView: View {
             return true
         }
     }
+}
+
+/// The color of the editor page, so the active tab merges with the document: `#fafbfc` in light, `#2f363d` in dark.
+/// The page is Vditor's editor root (`pre.vditor-reset`, `.vditor-sv`), which fills the web view. Vditor paints it
+/// `--textarea-background-color` only while focused in an active window, `--panel-background-color` otherwise;
+/// `Resources/web/editor.css` pins it, and `body`, to these colors in every state. `TabAppearanceTests` checks the
+/// computed page background against this constant.
+enum EditorPalette {
+    static let pageBackground = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x2f / 255, green: 0x36 / 255, blue: 0x3d / 255, alpha: 1)
+            : NSColor(srgbRed: 0xfa / 255, green: 0xfb / 255, blue: 0xfc / 255, alpha: 1)
+    }
+}
+
+extension EditorPalette {
+    /// Behind the tabs: darker than the page (`#e8e8e8` light, `#1d2125` dark), so the active tab stands out.
+    static let stripBackground = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x1d / 255, green: 0x21 / 255, blue: 0x25 / 255, alpha: 1)
+            : NSColor(srgbRed: 0xe8 / 255, green: 0xe8 / 255, blue: 0xe8 / 255, alpha: 1)
+    }
+}
+
+/// How a tab looks. A pure value, so tests check it without pixels and without a key window.
+struct TabAppearance: Equatable {
+    let isActive: Bool
+    let isKeyWindow: Bool
+
+    /// Active: the page color. Inactive: clear, the strip shows through.
+    var backgroundNSColor: NSColor? { isActive ? EditorPalette.pageBackground : nil }
+    /// 2 pt line at the top of the active tab: accent in the key window, gray otherwise. None on inactive tabs.
+    var stripeNSColor: NSColor? { isActive ? (isKeyWindow ? .controlAccentColor : .tertiaryLabelColor) : nil }
+    var weight: Font.Weight { isActive ? .semibold : .regular }
+
+    var background: Color { backgroundNSColor.map(Color.init(nsColor:)) ?? .clear }
+    var stripe: Color? { stripeNSColor.map(Color.init(nsColor:)) }
+}
+
+/// What the tab tells VoiceOver and UI scripts.
+enum TabAccessibility {
+    static func identifier(_ displayName: String) -> String { "tab:\(displayName)" }
+    static func traits(isActive: Bool) -> AccessibilityTraits { isActive ? .isSelected : [] }
 }
 
 /// What a dragged tab carries: its id with a prefix, so `EditorWebView` refuses it as text.
@@ -39,7 +100,7 @@ enum TabDrag {
     }
 }
 
-private struct TabItem: View {
+struct TabItem: View {
     let store: TabStore
     @ObservedObject var document: OpenDocument
     let isActive: Bool
@@ -47,6 +108,9 @@ private struct TabItem: View {
     let isLast: Bool
     @State private var hovering = false
     @State private var targeted = false
+    @Environment(\.controlActiveState) private var controlActiveState
+
+    private var appearance: TabAppearance { TabAppearance(isActive: isActive, isKeyWindow: controlActiveState == .key) }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -63,19 +127,29 @@ private struct TabItem: View {
                 }
             }
             .frame(width: 14, height: 14)
-            Text(document.displayName)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(isActive ? .primary : .secondary)
+            // The hidden semibold copy reserves the width, so the tab does not resize when it becomes active.
+            ZStack {
+                Text(document.displayName).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
+                    .hidden().accessibilityHidden(true)
+                Text(document.displayName).fontWeight(appearance.weight).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(isActive ? .primary : .secondary)
+            }
             Spacer(minLength: 14)
         }
         .padding(.leading, 6)
         .frame(minWidth: 90, maxWidth: 200, maxHeight: .infinity)
-        .background(isActive ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+        .background(appearance.background)
+        .overlay(alignment: .top) {
+            if let stripe = appearance.stripe { Rectangle().fill(stripe).frame(height: 2) }
+        }
         .overlay(alignment: .leading) {
             if targeted { Rectangle().fill(Color.accentColor).frame(width: 2) }
         }
         .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(document.displayName)
+        .accessibilityIdentifier(TabAccessibility.identifier(document.displayName))
+        .accessibilityAddTraits(TabAccessibility.traits(isActive: isActive))
         .onTapGesture { store.activate(document.id) }
         .onHover { hovering = $0 }
         .help(document.url?.path ?? document.displayName)

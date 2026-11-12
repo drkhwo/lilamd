@@ -139,6 +139,7 @@ final class Round4Tests: XCTestCase {
     }
 
     func testMenuDoesNotTakeOptionCmdEquals() async throws {
+        try requireForeground()
         let menu = try XCTUnwrap(NSApp.mainMenu)
         func event(_ chars: String, ignoring: String, flags: NSEvent.ModifierFlags, keyCode: UInt16 = 24) -> NSEvent {
             NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
@@ -268,6 +269,7 @@ final class Round4Tests: XCTestCase {
     /// Z-13: Shift+Cmd+= adds a column as before and leaves zoom alone. Fails if the menu takes the key (zoom changes)
     /// or if the table source is rewritten outside the table.
     func testShiftCmdEqualsAddsColumnOnly() async throws {
+        try requireForeground()
         let original = "Intro line\n\n| A | B |\n|---|---|\n| alpha | beta |\n\nOutro line\n"
         for chars in ["+", "="] {
             h = try await EditorHarness(text: original)
@@ -294,6 +296,7 @@ final class Round4Tests: XCTestCase {
     }
 
     func testShiftCmdMinusDeletesColumnOnly() async throws {
+        try requireForeground()
         let original = "| A | B | C |\n|---|---|---|\n| alpha | beta | gamma |\n"
         for chars in ["_", "-"] {
             h = try await EditorHarness(text: original)

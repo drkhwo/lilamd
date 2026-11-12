@@ -10,11 +10,14 @@ final class TabStore: ObservableObject {
     @Published private(set) var activeID: OpenDocument.ID?
     /// Tabs that were shown at least once (they have a web view).
     @Published private(set) var shown: Set<OpenDocument.ID> = []
-    let prompter: SavePrompting
+    /// `var`: a test swaps in a fake on the app's own store (Close Tab from the menu, CLOSE-3).
+    var prompter: SavePrompting
     /// Tests: false, so the Open Recent menu of the installed app (same bundle id) stays clean.
     var recordsRecents = true
     /// Tabs whose conflict sheet is on screen (one sheet per tab).
     private var askingConflict: Set<OpenDocument.ID> = []
+    /// Closes in progress: a second close of the same tab waits for the first one (one "Save?" sheet, CLOSE-6).
+    private var closing: [OpenDocument.ID: Task<Bool, Never>] = [:]
 
     init(prompter: SavePrompting) {
         self.prompter = prompter
@@ -168,9 +171,25 @@ final class TabStore: ObservableObject {
     /// false = the user cancelled (or the tab could not be written); the tab stays.
     @discardableResult
     func close(_ id: OpenDocument.ID) async -> Bool {
+        if let running = closing[id] { return await running.value }
+        guard document(id) != nil else { return true }
+        let task = Task { await closeNow(id) }
+        closing[id] = task
+        let closed = await task.value
+        closing[id] = nil
+        return closed
+    }
+
+    private func closeNow(_ id: OpenDocument.ID) async -> Bool {
         guard let doc = document(id) else { return true }
-        guard await resolveUnsaved(doc) else { return false }
+        log.info("TabStore.close begin: \(doc.displayName, privacy: .public)")
+        let started = ContinuousClock.now
+        guard await resolveUnsaved(doc) else {
+            log.info("TabStore.close end: \(doc.displayName, privacy: .public) kept, \(started.duration(to: .now), privacy: .public)")
+            return false
+        }
         remove(doc)
+        log.info("TabStore.close end: \(doc.displayName, privacy: .public) closed, \(started.duration(to: .now), privacy: .public)")
         return true
     }
 
@@ -215,7 +234,9 @@ final class TabStore: ObservableObject {
         doc.holdAutosave()
         // Closed: `remove` cancels the autosave this schedules before it can run. Cancel: autosave resumes.
         defer { doc.releaseAutosave() }
+        let flushStarted = ContinuousClock.now
         await doc.flushEditor()
+        log.info("flushEditor: \(doc.displayName, privacy: .public) \(flushStarted.duration(to: .now), privacy: .public)")
         guard doc.isDirty else { return true }
         if doc.url != nil, await save(doc, reason: .explicit) { return true }
         // The question is about the tab the user sees. No conflict sheet here: the save asks before overwriting.

@@ -7,10 +7,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = TabStore(prompter: AlertPrompter())
     private(set) lazy var mainWindow = MainWindowController(store: store)
 
+    /// The running delegate. `@NSApplicationDelegateAdaptor` hides it behind a SwiftUI proxy; tests need it.
+    private(set) static weak var shared: AppDelegate?
+
     /// XCTest hosts the app: no Open panel at launch, no Open Recent entries.
     static var isUnderXCTest: Bool { ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        Self.shared = self
+        TestBackground.prepare()
         ZoomMenuSupport.install()
         // Our own tab bar: no system window tabs and no system "Show Next Tab" items (they would take ⌃Tab).
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -33,6 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        TestBackground.returnFocus()
+        AppMenu.install()
         // Launched without files → Open panel, as with DocumentGroup (P5). Files from Finder or `open -a` may arrive
         // after this call, so "no tabs yet" is not enough: a launch to open documents is not a default launch.
         let isDefaultLaunch = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool ?? true
@@ -93,6 +100,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// File ▸ Open Recent. A deleted or moved file: the error alert, no new tab, and the menu reads the
+    /// system list again (a moved file may resolve to its new path there).
+    func openRecent(_ url: URL, recents: RecentDocuments? = nil, present: (NSAlert) -> Void = { _ = $0.runModal() }) {
+        guard !targetWindow().open([url], present: present) else { return }
+        (recents ?? RecentDocuments.shared).refresh()
+    }
+
     func save() {
         let store = targetStore()
         guard let doc = store.active else { return }
@@ -108,12 +122,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The main window closes its active tab; any other window (Settings, an alert's window) just closes.
+    enum CloseTarget {
+        case tab(MainWindowController)
+        case window(NSWindow)
+    }
+
+    /// File ▸ Close Tab: the key main window closes its active tab; any other key window (a panel, an alert's
+    /// window) just closes; no key window (the item pressed through AX or VoiceOver, or right after the app
+    /// became active again) → the app's main window, like every other menu action (`targetWindow`).
+    static func closeTarget(keyWindow: NSWindow?, fallback: MainWindowController) -> CloseTarget {
+        guard let keyWindow else { return .tab(fallback) }
+        if let main = keyWindow.windowController as? MainWindowController { return .tab(main) }
+        return .window(keyWindow)
+    }
+
+    /// File ▸ Close Tab (⌘W). Target: `closeTarget`.
     func closeTab() {
-        if let main = NSApp.keyWindow?.windowController as? MainWindowController {
-            main.closeActiveTab()
-        } else {
-            NSApp.keyWindow?.performClose(nil)
+        let key = NSApp.keyWindow
+        log.info("closeTab: keyWindow=\(key.map { String(describing: type(of: $0.windowController ?? $0)) } ?? "nil", privacy: .public) isActive=\(NSApp.isActive, privacy: .public)")
+        switch Self.closeTarget(keyWindow: key, fallback: mainWindow) {
+        case .tab(let main): main.closeActiveTab()
+        case .window(let window): window.performClose(nil)
         }
     }
 }

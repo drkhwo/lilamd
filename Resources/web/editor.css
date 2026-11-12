@@ -1,6 +1,11 @@
 html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-body { background: #ffffff; }
-body.dark { background: #1d2125; }
+/* The visible page is the editor root (pre.vditor-reset, .vditor-sv), which fills the view. Vditor paints it
+   --textarea-background-color (#fafbfc / #2f363d) only while focused in an active window, --panel-background-color
+   otherwise; it is pinned to the textarea color in every state, and body gets the same colors.
+   Keep in sync with EditorPalette.pageBackground (Sources/TabBarView.swift): the active tab uses them. */
+body { background: #fafbfc; }
+body.dark { background: #2f363d; }
+.vditor-ir pre.vditor-reset, .vditor-wysiwyg pre.vditor-reset, .vditor-sv { background-color: var(--textarea-background-color); }
 #editor { height: 100%; }
 .vditor { border: none !important; }
 .vditor-toolbar { display: none !important; }
