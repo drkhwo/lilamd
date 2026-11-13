@@ -4,7 +4,8 @@ import AppKit
 /// (`application(_:open:)`), so files open as tabs even when the window is hidden.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let store = TabStore(prompter: AlertPrompter())
+    private(set) lazy var historyStore = HistoryStore.defaultStore(isUnderXCTest: Self.isUnderXCTest, isDebug: Self.isDebugBuild)
+    lazy var store = TabStore(prompter: AlertPrompter(), historyStore: historyStore)
     private(set) lazy var mainWindow = MainWindowController(store: store)
 
     /// The running delegate. `@NSApplicationDelegateAdaptor` hides it behind a SwiftUI proxy; tests need it.
@@ -12,6 +13,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// XCTest hosts the app: no Open panel at launch, no Open Recent entries.
     static var isUnderXCTest: Bool { ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil }
+    private static var isDebugBuild: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         Self.shared = self
@@ -31,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let defaults = UserDefaults.standard
         let recents = defaults.object(forKey: "MDEditorRecordsRecents") == nil || defaults.bool(forKey: "MDEditorRecordsRecents")
         store.recordsRecents = recents && !Self.isUnderXCTest
+        _ = historyStore
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -100,11 +109,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// File ▸ Open Recent. A deleted or moved file: the error alert, no new tab, and the menu reads the
-    /// system list again (a moved file may resolve to its new path there).
+    /// File ▸ Open Recent. A deleted or moved file shows the open error and keeps its history record.
     func openRecent(_ url: URL, recents: RecentDocuments? = nil, present: (NSAlert) -> Void = { _ = $0.runModal() }) {
         guard !targetWindow().open([url], present: present) else { return }
-        (recents ?? RecentDocuments.shared).refresh()
+        recents?.refresh()
     }
 
     func save() {

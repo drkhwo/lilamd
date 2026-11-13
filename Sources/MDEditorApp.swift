@@ -32,7 +32,7 @@ struct MDEditorApp: App {
                     .keyboardShortcut("n", modifiers: .command)
                 Button("Open…") { appDelegate.openDocument() }
                     .keyboardShortcut("o", modifiers: .command)
-                OpenRecentMenu { appDelegate.openRecent($0) }
+                OpenRecentMenu(history: appDelegate.historyStore) { appDelegate.openRecent($0) }
             }
             CommandGroup(replacing: .saveItem) {
                 Button("Close Tab") { appDelegate.closeTab() }
@@ -116,17 +116,17 @@ final class RecentDocuments: ObservableObject {
 }
 
 private struct OpenRecentMenu: View {
-    @ObservedObject private var recents = RecentDocuments.shared
+    @ObservedObject var history: HistoryStore
     let open: (URL) -> Void
 
     var body: some View {
         Menu("Open Recent") {
-            ForEach(recents.urls, id: \.self) { url in
-                Button(url.lastPathComponent) { open(url) }
+            ForEach(history.pinned + history.recent) { record in
+                Button(record.displayName) { open(history.url(for: record)) }
             }
             Divider()
-            Button("Clear Menu") { recents.clear() }
-                .disabled(recents.urls.isEmpty)
+            Button("Clear Menu") { history.clearRecents() }
+                .disabled(history.recent.isEmpty)
         }
     }
 }

@@ -12,15 +12,17 @@ final class TabStore: ObservableObject {
     @Published private(set) var shown: Set<OpenDocument.ID> = []
     /// `var`: a test swaps in a fake on the app's own store (Close Tab from the menu, CLOSE-3).
     var prompter: SavePrompting
-    /// Tests: false, so the Open Recent menu of the installed app (same bundle id) stays clean.
+    let historyStore: HistoryStore?
+    /// Test hook to suppress history updates for unrelated tab behavior.
     var recordsRecents = true
     /// Tabs whose conflict sheet is on screen (one sheet per tab).
     private var askingConflict: Set<OpenDocument.ID> = []
     /// Closes in progress: a second close of the same tab waits for the first one (one "Save?" sheet, CLOSE-6).
     private var closing: [OpenDocument.ID: Task<Bool, Never>] = [:]
 
-    init(prompter: SavePrompting) {
+    init(prompter: SavePrompting, historyStore: HistoryStore? = nil) {
         self.prompter = prompter
+        self.historyStore = historyStore
     }
 
     /// In tab bar order.
@@ -40,6 +42,7 @@ final class TabStore: ObservableObject {
     @discardableResult
     func open(_ url: URL, activate: Bool = true) throws -> OpenDocument {
         if let existing = tab(for: url) {
+            noteRecent(url)
             if activate { self.activate(existing.id) }
             return existing
         }
@@ -267,6 +270,6 @@ final class TabStore: ObservableObject {
 
     private func noteRecent(_ url: URL) {
         guard recordsRecents else { return }
-        RecentDocuments.shared.note(url)
+        historyStore?.noteOpen(url)
     }
 }
