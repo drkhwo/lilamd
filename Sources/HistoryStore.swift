@@ -7,17 +7,20 @@ struct HistoryRecord: Codable, Identifiable, Equatable {
     var lastOpened: Date
     var pinned: Bool
     var pinOrder: Int?
+    var migrationOrder: Int?
 
     var displayName: String { URL(fileURLWithPath: path).lastPathComponent }
     var directoryPath: String { URL(fileURLWithPath: path).deletingLastPathComponent().path }
 
-    init(id: UUID = UUID(), bookmarkData: Data?, path: String, lastOpened: Date, pinned: Bool = false, pinOrder: Int? = nil) {
+    init(id: UUID = UUID(), bookmarkData: Data?, path: String, lastOpened: Date, pinned: Bool = false,
+         pinOrder: Int? = nil, migrationOrder: Int? = nil) {
         self.id = id
         self.bookmarkData = bookmarkData
         self.path = path
         self.lastOpened = lastOpened
         self.pinned = pinned
         self.pinOrder = pinOrder
+        self.migrationOrder = migrationOrder
     }
 }
 
@@ -30,6 +33,7 @@ final class HistoryStore: ObservableObject {
     @Published private(set) var records: [HistoryRecord] = []
     let storageURL: URL
     private let fileManager: FileManager
+    private let systemRecentsSink: (URL) -> Void
     private var migrationCompleted = false
 
     private struct Archive: Codable {
@@ -37,19 +41,26 @@ final class HistoryStore: ObservableObject {
         var migrationCompleted: Bool
     }
 
-    init(storageURL: URL, fileManager: FileManager = .default, migrationSource: () -> [URL] = { [] }) {
+    init(storageURL: URL, fileManager: FileManager = .default, migrationSource: () -> [URL] = { [] },
+         systemRecentsSink: @escaping (URL) -> Void = { url in
+             guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+             NSDocumentController.shared.noteNewRecentDocumentURL(url)
+         }) {
         self.storageURL = storageURL
         self.fileManager = fileManager
+        self.systemRecentsSink = systemRecentsSink
         if let data = try? Data(contentsOf: storageURL), let archive = try? JSONDecoder().decode(Archive.self, from: data) {
             records = Self.ordered(archive.records)
             migrationCompleted = archive.migrationCompleted
         }
         guard !migrationCompleted else { return }
         let urls = migrationSource()
+        let migrationTime = Date()
         for (index, url) in urls.enumerated() {
-            let date = Date(timeIntervalSince1970: TimeInterval(urls.count - index))
+            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? migrationTime.addingTimeInterval(TimeInterval(-index))
             if matchingRecord(for: url) == nil {
-                records.append(makeRecord(url, date: date))
+                records.append(makeRecord(url, date: date, migrationOrder: index))
             }
         }
         trimRecents()
@@ -75,6 +86,9 @@ final class HistoryStore: ObservableObject {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let url = location(isUnderXCTest: isUnderXCTest, isDebug: isDebug, applicationSupportURL: support)
         let source: () -> [URL] = isUnderXCTest ? { [] } : { NSDocumentController.shared.recentDocumentURLs }
+        if isUnderXCTest {
+            return HistoryStore(storageURL: url, migrationSource: source, systemRecentsSink: { _ in })
+        }
         return HistoryStore(storageURL: url, migrationSource: source)
     }
 
@@ -84,10 +98,12 @@ final class HistoryStore: ObservableObject {
 
     func noteOpen(_ url: URL, at date: Date = Date()) {
         let canonicalURL = Self.canonical(url)
+        systemRecentsSink(canonicalURL)
         if let index = records.firstIndex(where: { Self.canonical(self.url(for: $0)) == canonicalURL }) {
             records[index].path = canonicalURL.path
             records[index].bookmarkData = Self.bookmark(for: canonicalURL) ?? records[index].bookmarkData
             records[index].lastOpened = date
+            records[index].migrationOrder = nil
         } else {
             records.append(makeRecord(url, date: date))
         }
@@ -148,9 +164,10 @@ final class HistoryStore: ObservableObject {
         return records.first { Self.canonical(self.url(for: $0)).path == path }
     }
 
-    private func makeRecord(_ url: URL, date: Date) -> HistoryRecord {
+    private func makeRecord(_ url: URL, date: Date, migrationOrder: Int? = nil) -> HistoryRecord {
         let canonicalURL = Self.canonical(url)
-        return HistoryRecord(bookmarkData: Self.bookmark(for: canonicalURL), path: canonicalURL.path, lastOpened: date)
+        return HistoryRecord(bookmarkData: Self.bookmark(for: canonicalURL), path: canonicalURL.path,
+                             lastOpened: date, migrationOrder: migrationOrder)
     }
 
     private static func bookmark(for url: URL) -> Data? {
@@ -171,10 +188,13 @@ final class HistoryStore: ObservableObject {
         }
     }
 
-    private static func ordered(_ records: [HistoryRecord]) -> [HistoryRecord] {
+    nonisolated static func ordered(_ records: [HistoryRecord]) -> [HistoryRecord] {
         records.sorted {
             if $0.pinned != $1.pinned { return $0.pinned }
             if $0.pinned, $0.pinOrder != $1.pinOrder { return ($0.pinOrder ?? .max) < ($1.pinOrder ?? .max) }
+            if let left = $0.migrationOrder, let right = $1.migrationOrder { return left < right }
+            if $0.migrationOrder != nil { return false }
+            if $1.migrationOrder != nil { return true }
             if $0.lastOpened != $1.lastOpened { return $0.lastOpened > $1.lastOpened }
             return $0.path.localizedStandardCompare($1.path) == .orderedAscending
         }

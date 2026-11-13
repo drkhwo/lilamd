@@ -13,7 +13,7 @@ final class HistoryStoreTests: XCTestCase {
         directory = FileManager.default.temporaryDirectory.appending(path: "history-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         storageURL = directory.appending(path: "nested/History.json")
-        store = HistoryStore(storageURL: storageURL)
+        store = HistoryStore(storageURL: storageURL, systemRecentsSink: { _ in })
     }
 
     override func tearDown() async throws {
@@ -109,7 +109,7 @@ final class HistoryStoreTests: XCTestCase {
         store.pin(bID)
         let before = store.records
 
-        let reopened = HistoryStore(storageURL: storageURL)
+        let reopened = HistoryStore(storageURL: storageURL, systemRecentsSink: { _ in })
 
         XCTAssertEqual(
             Dictionary(uniqueKeysWithValues: reopened.records.map { ($0.id, $0) }),
@@ -130,7 +130,7 @@ final class HistoryStoreTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: archive)
         try FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: storageURL)
-        let reopened = HistoryStore(storageURL: storageURL)
+        let reopened = HistoryStore(storageURL: storageURL, systemRecentsSink: { _ in })
         let retained = try XCTUnwrap(reopened.recent.first)
 
         XCTAssertEqual(retained.bookmarkData, Data([0]))
@@ -148,12 +148,12 @@ final class HistoryStoreTests: XCTestCase {
         let first = HistoryStore(storageURL: migrationURL, migrationSource: {
             sourceCalls += 1
             return [a, b]
-        })
+        }, systemRecentsSink: { _ in })
         let savedOrder = first.recent.map(\.path)
         let second = HistoryStore(storageURL: migrationURL, migrationSource: {
             sourceCalls += 1
             return [directory.appending(path: "new.md")]
-        })
+        }, systemRecentsSink: { _ in })
 
         XCTAssertEqual(sourceCalls, 1)
         XCTAssertEqual(second.recent.map(\.path), savedOrder)
@@ -162,12 +162,69 @@ final class HistoryStoreTests: XCTestCase {
 
     func testMigrationKeepsOnlyNewestFiftyRecords() {
         let urls = (0..<55).map { directory.appending(path: "migrated-\($0).md") }
-        let migrated = HistoryStore(storageURL: directory.appending(path: "migration-cap/History.json"), migrationSource: { urls })
+        let migrated = HistoryStore(storageURL: directory.appending(path: "migration-cap/History.json"), migrationSource: { urls }, systemRecentsSink: { _ in })
 
         XCTAssertEqual(migrated.recent.count, 50)
         XCTAssertEqual(migrated.recent.first?.displayName, "migrated-0.md")
         XCTAssertEqual(migrated.recent.last?.displayName, "migrated-49.md")
         XCTAssertFalse(migrated.records.contains { $0.displayName == "migrated-54.md" })
+    }
+
+    func testMigrationUsesRecentDatesAndPreservesSourceOrder() throws {
+        let urls = try [file("migration-first.md"), file("migration-second.md"), file("migration-third.md")]
+        let dates = [Date(timeIntervalSince1970: 1_800_000_000), Date(timeIntervalSince1970: 1_700_000_000), Date(timeIntervalSince1970: 1_600_000_000)]
+        for (url, date) in zip(urls, dates) {
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+        }
+        let migrated = HistoryStore(storageURL: directory.appending(path: "dated-migration/History.json"), migrationSource: { urls }, systemRecentsSink: { _ in })
+
+        XCTAssertEqual(migrated.recent.map(\.path), urls.map(\.path))
+        XCTAssertTrue(migrated.records.allSatisfy { $0.lastOpened >= Date(timeIntervalSince1970: 946_684_800) })
+        XCTAssertEqual(migrated.recent.map(\.lastOpened), dates)
+    }
+
+    func testMigratedRecentOrderMatchesOpenRecentMenuDespiteModificationDates() throws {
+        let urls = try [file("system-first.md"), file("system-second.md"), file("system-third.md")]
+        let dates = [Date(timeIntervalSince1970: 1_600_000_000), Date(timeIntervalSince1970: 1_800_000_000), Date(timeIntervalSince1970: 1_700_000_000)]
+        for (url, date) in zip(urls, dates) {
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+        }
+        let migrated = HistoryStore(storageURL: directory.appending(path: "ordered-migration/History.json"),
+                                    migrationSource: { urls }, systemRecentsSink: { _ in })
+        let appOpenedFirst = try file("app-opened-first.md")
+        let appOpenedLatest = try file("app-opened-latest.md")
+        migrated.noteOpen(appOpenedFirst, at: Date(timeIntervalSince1970: 10))
+        migrated.noteOpen(appOpenedLatest, at: Date(timeIntervalSince1970: 20))
+
+        let presentation = StartScreenPresentation(records: migrated.records, query: "")
+        let expectedPaths = [appOpenedLatest.path, appOpenedFirst.path] + urls.map(\.path)
+
+        XCTAssertEqual(migrated.menuRecords.map(\.path), expectedPaths)
+        XCTAssertEqual(presentation.recent.map(\.path), expectedPaths)
+    }
+
+    func testDefaultStoreUnderXCTestDoesNotChangeSystemRecentDocuments() throws {
+        XCTAssertTrue(AppDelegate.isUnderXCTest)
+        let before = NSDocumentController.shared.recentDocumentURLs
+        let app = AppDelegate(historyStore: nil, sessionStore: nil)
+        let defaultStore = app.historyStore
+        defer { try? FileManager.default.removeItem(at: defaultStore.storageURL.deletingLastPathComponent()) }
+        let url = try file("default-store-open.md")
+
+        defaultStore.noteOpen(url)
+
+        XCTAssertEqual(NSDocumentController.shared.recentDocumentURLs, before)
+    }
+
+    func testNotingOpenFileAlsoUpdatesInjectedSystemRecentsSink() throws {
+        let url = try file("system-recent.md")
+        var noted: [URL] = []
+        let isolated = HistoryStore(storageURL: directory.appending(path: "injected/History.json"), systemRecentsSink: { noted.append($0) })
+
+        isolated.noteOpen(url)
+
+        XCTAssertEqual(noted, [url.standardizedFileURL.resolvingSymlinksInPath()])
+        XCTAssertEqual(isolated.recent.map(\.path), [url.path])
     }
 
     func testInjectedStorageAndRuntimeLocationsAreIsolated() {

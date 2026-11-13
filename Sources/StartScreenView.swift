@@ -15,7 +15,7 @@ struct StartScreenPresentation {
                 || record.path.localizedCaseInsensitiveContains(needle)
         }
         pinned = matching.filter(\.pinned).sorted { ($0.pinOrder ?? .max) < ($1.pinOrder ?? .max) }
-        recent = matching.filter { !$0.pinned }.sorted { $0.lastOpened > $1.lastOpened }
+        recent = HistoryStore.ordered(matching.filter { !$0.pinned })
         self.query = needle
         self.fileExists = fileExists
     }

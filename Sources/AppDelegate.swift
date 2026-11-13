@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
-    /// XCTest hosts the app: no Open panel at launch, no Open Recent entries.
+    /// XCTest hosts the app: no Open panel at launch.
     static var isUnderXCTest: Bool { ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil }
     private static var isDebugBuild: Bool {
         #if DEBUG
@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `--args -MDEditorRecordsRecents NO` keeps their files out of its Open Recent menu.
         let defaults = UserDefaults.standard
         let recents = defaults.object(forKey: "MDEditorRecordsRecents") == nil || defaults.bool(forKey: "MDEditorRecordsRecents")
-        store.recordsRecents = recents && !Self.isUnderXCTest
+        store.recordsRecents = recents
         _ = historyStore
         _ = sessionStore
     }
@@ -110,7 +110,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dirty = store.tabs.filter(\.isDirty).count
         log.info("quit requested, \(dirty) tabs with unsaved changes")
         guard !store.tabs.isEmpty else {
-            sessionStore.save(store.fileSessionSnapshot())
             return .terminateNow
         }
         mainWindow.show() // a question is a sheet on this window

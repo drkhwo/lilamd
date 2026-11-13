@@ -73,7 +73,7 @@ final class SessionStore {
 
     /// A cancelled quit leaves the last successfully saved session untouched.
     func save(_ snapshot: FileTabSnapshot, quitPreparationSucceeded: Bool = true) {
-        guard quitPreparationSucceeded else { return }
+        guard quitPreparationSucceeded, !snapshot.files.isEmpty else { return }
         files = snapshot.files.map(Self.bookmark)
         activeFilePath = snapshot.activeFile.map(Self.canonical).map(\.path)
         persist()

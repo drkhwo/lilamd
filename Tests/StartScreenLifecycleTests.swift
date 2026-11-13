@@ -24,7 +24,7 @@ final class StartScreenLifecycleTests: XCTestCase {
     }
 
     private func history() -> HistoryStore {
-        HistoryStore(storageURL: directory.appending(path: "History.json"))
+        HistoryStore(storageURL: directory.appending(path: "History.json"), systemRecentsSink: { _ in })
     }
 
     private func session() -> SessionStore {
@@ -116,5 +116,39 @@ final class StartScreenLifecycleTests: XCTestCase {
         let pinnedScreen = StartScreenPresentation(records: app.mainWindow.historyStore.records, query: "")
         XCTAssertEqual(history.menuRecords.map(\.id), pinnedScreen.pinned.map(\.id) + pinnedScreen.recent.map(\.id))
         XCTAssertTrue(app.mainWindow.historyStore === app.historyStore)
+    }
+
+    func testRedButtonCloseThenQuitPreservesOrderedThreeFileSessionAndActiveFile() async throws {
+        let files = try [file("one.md"), file("two.md"), file("three.md")]
+        let history = history()
+        let session = session()
+        let app = AppDelegate(historyStore: history, sessionStore: session)
+        defer { app.mainWindow.window?.close() }
+        for url in files { _ = try app.store.open(url, activate: false) }
+        app.store.activate(try XCTUnwrap(app.store.tab(for: files[1])).id)
+
+        let closedAll = await app.mainWindow.closeTabsForWindowClose()
+        XCTAssertTrue(closedAll)
+        XCTAssertTrue(app.store.tabs.isEmpty)
+        XCTAssertEqual(app.applicationShouldTerminate(NSApp), .terminateNow)
+        let restored = SessionStore(storageURL: session.storageURL).restorableSession()
+
+        XCTAssertEqual(restored.files, files)
+        XCTAssertEqual(restored.activeFile, files[1])
+    }
+
+    func testEmptyLaunchQuitDoesNotErasePreviousSession() throws {
+        let priorFiles = try [file("prior-one.md"), file("prior-two.md")]
+        let session = session()
+        session.save(FileTabSnapshot(files: priorFiles, activeFile: priorFiles[0]))
+        let app = AppDelegate(historyStore: history(), sessionStore: session)
+        defer { app.mainWindow.window?.close() }
+
+        XCTAssertTrue(app.store.tabs.isEmpty)
+        XCTAssertEqual(app.applicationShouldTerminate(NSApp), .terminateNow)
+        let restored = SessionStore(storageURL: session.storageURL).restorableSession()
+
+        XCTAssertEqual(restored.files, priorFiles)
+        XCTAssertEqual(restored.activeFile, priorFiles[0])
     }
 }

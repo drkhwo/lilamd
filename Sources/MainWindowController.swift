@@ -149,18 +149,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             isClosingAll = true
             Task {
                 defer { isClosingAll = false }
-                var closedAllTabs = true
-                for doc in store.tabs {
-                    guard await store.close(doc.id) else {
-                        closedAllTabs = false
-                        break
-                    }
-                }
-                guard RedButtonClosePolicy.shouldCloseWindow(afterCloseFlowSucceeded: closedAllTabs) else { return }
+                guard await closeTabsForWindowClose(),
+                      RedButtonClosePolicy.shouldCloseWindow(afterCloseFlowSucceeded: true) else { return }
                 sender.close()
             }
             return false
         }
+    }
+
+    /// Capture the file session before close removes tabs; persist it only if the full close flow succeeds.
+    func closeTabsForWindowClose() async -> Bool {
+        let snapshot = store.fileSessionSnapshot()
+        for doc in store.tabs {
+            guard await store.close(doc.id) else { return false }
+        }
+        sessionStore.save(snapshot)
+        return true
     }
 
     private func installKeyMonitor() {
