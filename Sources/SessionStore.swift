@@ -5,7 +5,7 @@ struct FileTabSnapshot {
     let activeFile: URL?
 }
 
-struct RestorableSession {
+struct RestorableSession: Equatable {
     let files: [URL]
     let activeFile: URL?
     let missingCount: Int

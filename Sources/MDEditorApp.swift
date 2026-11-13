@@ -86,42 +86,13 @@ struct MDEditorApp: App {
     }
 }
 
-/// File > Open Recent: the system list of the app (`NSDocumentController.recentDocumentURLs`), published for the menu.
-@MainActor
-final class RecentDocuments: ObservableObject {
-    static let shared = RecentDocuments()
-    @Published private(set) var urls: [URL]
-    /// Tests pass their own list: the system one is shared with the installed app (same bundle id).
-    private let source: () -> [URL]
-
-    init(source: @escaping () -> [URL] = { NSDocumentController.shared.recentDocumentURLs }) {
-        self.source = source
-        urls = source()
-    }
-
-    func note(_ url: URL) {
-        NSDocumentController.shared.noteNewRecentDocumentURL(url)
-        urls = source()
-    }
-
-    /// The system list may have changed (a moved file resolves to its new path): read it again.
-    func refresh() {
-        urls = source()
-    }
-
-    func clear() {
-        NSDocumentController.shared.clearRecentDocuments(nil)
-        urls = []
-    }
-}
-
 private struct OpenRecentMenu: View {
     @ObservedObject var history: HistoryStore
     let open: (URL) -> Void
 
     var body: some View {
         Menu("Open Recent") {
-            ForEach(history.pinned + history.recent) { record in
+            ForEach(history.menuRecords) { record in
                 Button(record.displayName) { open(history.url(for: record)) }
             }
             Divider()

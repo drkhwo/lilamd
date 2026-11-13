@@ -28,6 +28,7 @@ final class TabStore: ObservableObject {
     /// In tab bar order.
     var tabs: [OpenDocument] { order.compactMap(document) }
     var active: OpenDocument? { activeID.flatMap(document) }
+    var contentState: MainWindowContentState { order.isEmpty ? .startScreen : .editor }
 
     /// A quit snapshot contains only file tabs, in their current tab-bar order.
     func fileSessionSnapshot() -> FileTabSnapshot {
@@ -296,4 +297,9 @@ final class TabStore: ObservableObject {
         guard recordsRecents else { return }
         historyStore?.noteOpen(url)
     }
+}
+
+enum MainWindowContentState: Equatable {
+    case startScreen
+    case editor
 }

@@ -102,28 +102,27 @@ final class MacConventionsTests: XCTestCase {
     func testOpenRecentDeletedFileShowsAlert() throws {
         let app = try XCTUnwrap(AppDelegate.shared)
         let gone = dir.appending(path: "deleted.md")
+        app.historyStore.noteOpen(gone)
         let tabs = app.store.tabs.count
         var alerts: [NSAlert] = []
-        app.openRecent(gone, recents: RecentDocuments(source: { [] }), present: { alerts.append($0) })
+        app.openRecent(gone, present: { alerts.append($0) })
         XCTAssertEqual(alerts.count, 1)
         XCTAssertEqual(alerts.first?.messageText, "The document “deleted.md” could not be opened.")
         XCTAssertFalse((alerts.first?.informativeText ?? "").isEmpty, "a readable reason")
         XCTAssertEqual(app.store.tabs.count, tabs, "no new tab")
+        XCTAssertTrue(app.historyStore.records.contains { $0.path == gone.path }, "missing history record remains available to remove")
     }
 
-    /// MAC-7: a moved file — the old path fails; afterwards the menu has the list the system has now.
-    func testOpenRecentMovedFileRefreshesList() throws {
+    /// MAC-7: a missing file stays in the app's history instead of being replaced by the system recents list.
+    func testOpenRecentMissingFileStaysInHistory() throws {
         let app = try XCTUnwrap(AppDelegate.shared)
-        let old = dir.appending(path: "moved.md")
-        let new = dir.appending(path: "sub/moved.md")
-        var system = [old]
-        let recents = RecentDocuments(source: { system })
-        XCTAssertEqual(recents.urls, [old])
-        system = [new] // the system list resolved the bookmark to the new place
+        let missing = dir.appending(path: "moved.md")
+        app.historyStore.noteOpen(missing)
         var alerts: [NSAlert] = []
-        app.openRecent(old, recents: recents, present: { alerts.append($0) })
+        app.openRecent(missing, present: { alerts.append($0) })
         XCTAssertEqual(alerts.count, 1)
-        XCTAssertEqual(recents.urls, [new], "list read again after the failed open")
+        let record = try XCTUnwrap(app.historyStore.records.first { $0.path == missing.path })
+        XCTAssertFalse(app.historyStore.fileExists(record))
     }
 
     /// An existing file opens without an alert and the list is not touched.
@@ -131,13 +130,10 @@ final class MacConventionsTests: XCTestCase {
         let app = try XCTUnwrap(AppDelegate.shared)
         let url = dir.appending(path: "here.md")
         try Data("Here\n".utf8).write(to: url)
-        var system: [URL] = []
-        let recents = RecentDocuments(source: { system })
-        system = [url]
         var alerts: [NSAlert] = []
-        app.openRecent(url, recents: recents, present: { alerts.append($0) })
+        app.openRecent(url, present: { alerts.append($0) })
         XCTAssertEqual(alerts.count, 0)
-        XCTAssertEqual(recents.urls, [], "no refresh after a good open")
+        XCTAssertTrue(app.historyStore.records.contains { $0.path == url.path }, "successful Open Recent uses HistoryStore")
         let doc = try XCTUnwrap(app.store.tab(for: url))
         await app.store.close(doc.id)
         app.mainWindow.window?.orderOut(nil)

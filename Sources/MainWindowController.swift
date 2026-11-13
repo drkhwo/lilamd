@@ -6,13 +6,19 @@ import SwiftUI
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let store: TabStore
+    let historyStore: HistoryStore
+    let sessionStore: SessionStore
     private var subscriptions: Set<AnyCancellable> = []
-    /// The red button is closing the tabs one by one.
     private var isClosingAll = false
     private var keyMonitor: Any?
 
-    init(store: TabStore) {
+    init(store: TabStore, historyStore: HistoryStore? = nil, sessionStore: SessionStore? = nil,
+         openDocument: @escaping () -> Void = {}) {
         self.store = store
+        let temporaryRoot = FileManager.default.temporaryDirectory
+            .appending(path: "LilaMD-window-\(UUID().uuidString)", directoryHint: .isDirectory)
+        self.historyStore = historyStore ?? store.historyStore ?? HistoryStore(storageURL: temporaryRoot.appending(path: HistoryStore.fileName))
+        self.sessionStore = sessionStore ?? SessionStore(storageURL: temporaryRoot.appending(path: SessionStore.fileName))
         let size = MDEditorApp.defaultWindowSize
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -21,7 +27,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.title = "LilaMD"
         super.init(window: window)
-        let hosting = NSHostingController(rootView: TabbedWindow(store: store, openFiles: { [weak self] in self?.open($0) }))
+        let hosting = NSHostingController(rootView: TabbedWindow(
+            store: store,
+            historyStore: self.historyStore,
+            sessionStore: self.sessionStore,
+            openFiles: { [weak self] in self?.open($0) },
+            openDocument: openDocument,
+            restoreSession: { [weak self] in self?.restore($0) }
+        ))
         // The window keeps the size set here; the view only reports its minimum (480×320).
         hosting.sizingOptions = [.minSize]
         // The Visual / Source picker in `.toolbar` becomes the window's toolbar.
@@ -33,9 +46,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         (store.prompter as? AlertPrompter)?.window = { [weak window] in window }
         observeStore()
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            MainActor.assumeIsolated { self?.switchesTab(event) == true } ? nil : event
-        }
+        installKeyMonitor()
     }
 
     @available(*, unavailable)
@@ -43,9 +54,28 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func show() {
         guard let window else { return }
+        installKeyMonitor()
         TestBackground.activateApp()
         window.makeKeyAndOrderFront(nil)
         TestBackground.park(window)
+    }
+
+    /// Restores the saved file tabs, then opens any incoming launch files so the last incoming file is active.
+    func restore(_ session: RestorableSession, incomingURLs: [URL] = [],
+                 present: (NSAlert) -> Void = { _ = $0.runModal() }) {
+        _ = store.restoreFiles(session.files, activeFile: session.activeFile)
+        if incomingURLs.isEmpty {
+            show()
+        } else {
+            _ = open(incomingURLs, present: present)
+        }
+        if session.missingCount > 0 {
+            let alert = NSAlert()
+            alert.messageText = "Some files could not be restored."
+            alert.informativeText = "\(session.missingCount) \(session.missingCount == 1 ? "file" : "files") not found."
+            alert.addButton(withTitle: "OK")
+            present(alert)
+        }
     }
 
     /// Finder, `open -a`, the Open panel, drops: one tab per file (an open file only gets activated).
@@ -77,13 +107,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return alert
     }
 
-    /// File > Close Tab (⌘W). No tabs: the window just goes away.
+    /// File > Close Tab (⌘W). Closing the last tab leaves the start screen in this window.
     func closeActiveTab() {
         log.info("closeActiveTab: \(self.store.active?.displayName ?? "no tab", privacy: .public)")
-        guard let id = store.activeID else {
-            window?.orderOut(nil)
-            return
-        }
+        guard let id = store.activeID else { return }
         Task { await store.close(id) }
     }
 
@@ -106,24 +133,41 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: NSWindowDelegate
 
-    /// Only tests close the window for real (the app hides it).
     func windowWillClose(_ notification: Notification) {
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
     }
 
-    /// The red button closes the tabs one by one, like ⌘W on each; Cancel in any question stops.
-    /// The window itself is only hidden (when the last tab is gone), never closed.
+    /// The red button closes the tabs one by one, then closes this window. Cancel stops the sequence.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard !isClosingAll else { return false }
-        isClosingAll = true
-        Task {
-            defer { isClosingAll = false }
-            for doc in store.tabs {
-                guard await store.close(doc.id) else { return }
+        switch RedButtonClosePolicy.decision(tabCount: store.tabs.count, closeFlowInProgress: isClosingAll) {
+        case .closeWindow:
+            return true
+        case .keepOpen:
+            return false
+        case .closeTabs:
+            isClosingAll = true
+            Task {
+                defer { isClosingAll = false }
+                var closedAllTabs = true
+                for doc in store.tabs {
+                    guard await store.close(doc.id) else {
+                        closedAllTabs = false
+                        break
+                    }
+                }
+                guard RedButtonClosePolicy.shouldCloseWindow(afterCloseFlowSucceeded: closedAllTabs) else { return }
+                sender.close()
             }
+            return false
         }
-        return false
+    }
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated { self?.switchesTab(event) == true } ? nil : event
+        }
     }
 
     // MARK: Store → window
@@ -147,11 +191,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 window.isDocumentEdited = dirty
             }
             .store(in: &subscriptions)
-        // Last tab closed → hide the window; the app keeps running (TB-12).
-        store.$order
-            .sink { [weak self] order in
-                if order.isEmpty { self?.window?.orderOut(nil) }
-            }
-            .store(in: &subscriptions)
+    }
+}
+
+enum RedButtonCloseDecision: Equatable {
+    case closeWindow
+    case closeTabs
+    case keepOpen
+}
+
+enum RedButtonClosePolicy {
+    static func decision(tabCount: Int, closeFlowInProgress: Bool) -> RedButtonCloseDecision {
+        if closeFlowInProgress { return .keepOpen }
+        return tabCount == 0 ? .closeWindow : .closeTabs
+    }
+
+    static func shouldCloseWindow(afterCloseFlowSucceeded: Bool) -> Bool {
+        afterCloseFlowSucceeded
     }
 }

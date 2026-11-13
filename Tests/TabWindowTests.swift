@@ -155,8 +155,8 @@ final class TabWindowTests: XCTestCase {
         XCTAssertNotNil(docC.controller, "a hidden tab keeps its web view")
     }
 
-    /// TB-10, TB-12: ⌘W closes the active tab; after the last one the window is hidden.
-    func testCmdWClosesActiveTabThenHidesWindow() async throws {
+    /// TB-10: ⌘W closes the active tab; after the last one the same visible window shows the start screen.
+    func testCmdWClosesActiveTabThenShowsStartScreen() async throws {
         try requireForeground()
         let a = try file("a.md", "Alpha\n")
         let b = try file("b.md", "Beta\n")
@@ -167,7 +167,8 @@ final class TabWindowTests: XCTestCase {
         XCTAssertEqual(store.active?.url, a)
         try await key("w", keyCode: 13, flags: .command)
         try await waitUntil(5, "last tab closed") { self.store.tabs.isEmpty }
-        XCTAssertEqual(wc.window?.isVisible, false)
+        XCTAssertEqual(store.contentState, .startScreen)
+        XCTAssertEqual(wc.window?.isVisible, true)
         XCTAssertEqual(fake.calls, [], "clean tabs close without questions")
     }
 
@@ -372,8 +373,7 @@ final class TabWindowTests: XCTestCase {
         XCTAssertEqual(store.activeID, untitled.id, "the question is about the visible tab")
     }
 
-    /// TB-31 (changed by Stas 05.11): the red button writes a dirty file tab without a question, like ⌘W,
-    /// closes the tab and hides the window.
+    /// TB-31: the red button writes a dirty file tab without a question, then really closes the window.
     func testRedButtonWritesDirtyFileTabWithoutQuestion() async throws {
         OpenDocument.autosaveDelay = .seconds(60)
         let a = try file("a.md", "Alpha\n")
@@ -383,11 +383,14 @@ final class TabWindowTests: XCTestCase {
         try await type(" red", after: "Alpha", in: doc)
         try await waitUntil(5, "edit") { doc.isDirty }
         fake.closeChoice = .cancel // would keep the tab if it were asked
-        wc.window?.performClose(nil)
+        let window = try XCTUnwrap(wc.window)
+        let closedWindow = XCTNSNotificationExpectation(name: NSWindow.willCloseNotification, object: window)
+        window.performClose(nil)
         try await waitUntil(5, "tab closed") { self.store.tabs.isEmpty }
         XCTAssertEqual(try String(contentsOf: a, encoding: .utf8), "Alpha red\n")
         XCTAssertEqual(fake.calls, [])
-        try await waitUntil(2, "window hidden") { self.wc.window?.isVisible == false }
+        await fulfillment(of: [closedWindow], timeout: 5)
+        XCTAssertFalse(window.isVisible)
     }
 
     /// TB-11 (changed by Stas 05.11): ⌘W on a dirty file tab writes the file and closes the tab, no question.

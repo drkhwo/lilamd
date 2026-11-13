@@ -46,33 +46,51 @@ struct EditorView: NSViewRepresentable {
 /// The main window's content: tab bar over the editors of the tabs shown so far.
 struct TabbedWindow: View {
     @ObservedObject var store: TabStore
+    @ObservedObject var historyStore: HistoryStore
+    let sessionStore: SessionStore
     var openFiles: ([URL]) -> Void
+    var openDocument: () -> Void
+    var restoreSession: (RestorableSession) -> Void
     @AppStorage(EditorModePreference.key) private var mode: EditorMode = .visual
     @AppStorage(ZoomPreference.key) private var zoom: Double = ZoomPreference.defaultValue
 
     var body: some View {
-        VStack(spacing: 0) {
-            TabBarView(store: store, openFiles: openFiles)
-            Divider()
-            ZStack {
-                // Creation order, never reordered: moving a tab never re-parents a web view.
-                ForEach(store.documents.filter { store.shown.contains($0.id) }) { doc in
-                    EditorView(document: doc, mode: mode, zoom: ZoomPreference.snap(zoom),
-                               isActive: doc.id == store.activeID, openFiles: openFiles)
+        Group {
+            if store.contentState == .startScreen {
+                StartScreenView(
+                    history: historyStore,
+                    session: sessionStore,
+                    newDocument: { store.newUntitled() },
+                    openDocument: openDocument,
+                    restoreSession: restoreSession,
+                    openFile: { openFiles([$0]) }
+                )
+            } else {
+                VStack(spacing: 0) {
+                    TabBarView(store: store, openFiles: openFiles)
+                    Divider()
+                    ZStack {
+                        // Creation order, never reordered: moving a tab never re-parents a WKWebView.
+                        ForEach(store.documents.filter { store.shown.contains($0.id) }) { doc in
+                            EditorView(document: doc, mode: mode, zoom: ZoomPreference.snap(zoom),
+                                       isActive: doc.id == store.activeID, openFiles: openFiles)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            // Fills the window also with no editor yet (the window keeps its size, it does not shrink to the content).
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 480, minHeight: 320)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("Mode", selection: $mode) {
-                    Text("Visual").tag(EditorMode.visual)
-                    Text("Source").tag(EditorMode.source)
+            if store.contentState == .editor {
+                ToolbarItem(placement: .principal) {
+                    Picker("Mode", selection: $mode) {
+                        Text("Visual").tag(EditorMode.visual)
+                        Text("Source").tag(EditorMode.source)
+                    }
+                    .pickerStyle(.segmented)
+                    .help("Visual (⌘1) / Source (⌘2)")
                 }
-                .pickerStyle(.segmented)
-                .help("Visual (⌘1) / Source (⌘2)")
             }
         }
     }

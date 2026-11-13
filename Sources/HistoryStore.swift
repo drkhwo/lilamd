@@ -80,6 +80,7 @@ final class HistoryStore: ObservableObject {
 
     var pinned: [HistoryRecord] { Self.ordered(records).filter(\.pinned) }
     var recent: [HistoryRecord] { Self.ordered(records).filter { !$0.pinned } }
+    var menuRecords: [HistoryRecord] { pinned + recent }
 
     func noteOpen(_ url: URL, at date: Date = Date()) {
         let canonicalURL = Self.canonical(url)
