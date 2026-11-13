@@ -5,6 +5,7 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) lazy var historyStore = HistoryStore.defaultStore(isUnderXCTest: Self.isUnderXCTest, isDebug: Self.isDebugBuild)
+    private(set) lazy var sessionStore = SessionStore.defaultStore(isUnderXCTest: Self.isUnderXCTest, isDebug: Self.isDebugBuild)
     lazy var store = TabStore(prompter: AlertPrompter(), historyStore: historyStore)
     private(set) lazy var mainWindow = MainWindowController(store: store)
 
@@ -40,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let recents = defaults.object(forKey: "MDEditorRecordsRecents") == nil || defaults.bool(forKey: "MDEditorRecordsRecents")
         store.recordsRecents = recents && !Self.isUnderXCTest
         _ = historyStore
+        _ = sessionStore
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -69,10 +71,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let dirty = store.tabs.filter(\.isDirty).count
         log.info("quit requested, \(dirty) tabs with unsaved changes")
-        guard !store.tabs.isEmpty else { return .terminateNow }
+        guard !store.tabs.isEmpty else {
+            sessionStore.save(store.fileSessionSnapshot())
+            return .terminateNow
+        }
         mainWindow.show() // a question is a sheet on this window
         Task {
             let ok = await store.prepareToQuit()
+            sessionStore.save(store.fileSessionSnapshot(), quitPreparationSucceeded: ok)
             NSApp.reply(toApplicationShouldTerminate: ok)
         }
         return .terminateLater

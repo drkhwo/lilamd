@@ -29,6 +29,30 @@ final class TabStore: ObservableObject {
     var tabs: [OpenDocument] { order.compactMap(document) }
     var active: OpenDocument? { activeID.flatMap(document) }
 
+    /// A quit snapshot contains only file tabs, in their current tab-bar order.
+    func fileSessionSnapshot() -> FileTabSnapshot {
+        let fileTabs = tabs.filter { $0.url != nil }
+        let activeFile = active.flatMap { $0.url == nil ? nil : $0.url }
+        return FileTabSnapshot(files: fileTabs.compactMap(\.url), activeFile: activeFile)
+    }
+
+    /// Restores surviving files in order. Missing or unreadable files are skipped; if the saved
+    /// active file did not survive, the last successfully restored file becomes active.
+    @discardableResult
+    func restoreFiles(_ urls: [URL], activeFile: URL?) -> [OpenDocument] {
+        var restored: [OpenDocument] = []
+        for url in urls {
+            guard let document = try? open(url, activate: false) else { continue }
+            restored.append(document)
+        }
+        guard let last = restored.last else { return restored }
+        let selected = activeFile.flatMap { activeURL in
+            restored.first { doc in doc.url.map(Self.canonical) == Self.canonical(activeURL) }
+        } ?? last
+        activate(selected.id)
+        return restored
+    }
+
     func document(_ id: OpenDocument.ID) -> OpenDocument? {
         documents.first { $0.id == id }
     }
