@@ -18,6 +18,22 @@ final class StartScreenViewTests: XCTestCase {
         XCTAssertTrue(model.matchRanges(in: "Anything").isEmpty)
     }
 
+    func testMigratedRecordShowsDateOnlyAfterOpeningInLilaMD() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appending(path: "migrated.md")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("content".utf8).write(to: file)
+        let store = HistoryStore(storageURL: directory.appending(path: "history.json"),
+                                 migrationSource: { [file] }, systemRecentsSink: { _ in })
+        let migrated = try XCTUnwrap(store.recent.first)
+
+        XCTAssertFalse(StartScreenPresentation.showsDate(for: migrated))
+        store.noteOpen(file, at: Date(timeIntervalSince1970: 100))
+        let opened = try XCTUnwrap(store.records.first { $0.id == migrated.id })
+        XCTAssertTrue(StartScreenPresentation.showsDate(for: opened))
+    }
+
     func testPinnedAndRecentGroupingDeduplicatesPinnedRecords() {
         let recentOld = record("old.md", date: 1)
         let pinnedLater = record("pinned.md", pinned: true, order: 1, date: 2)

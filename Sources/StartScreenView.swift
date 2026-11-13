@@ -24,6 +24,7 @@ struct StartScreenPresentation {
     var isEmpty: Bool { pinned.isEmpty && recent.isEmpty }
     func exists(_ record: HistoryRecord) -> Bool { fileExists(record) }
     var missing: [HistoryRecord] { (pinned + recent).filter { !fileExists($0) } }
+    static func showsDate(for record: HistoryRecord) -> Bool { record.migrationOrder == nil }
     static func restoreButtonTitle(for session: RestorableSession) -> String? {
         session.files.isEmpty ? nil : "Restore last session · \(session.files.count) \(session.files.count == 1 ? "tab" : "tabs")"
     }
@@ -214,8 +215,11 @@ struct StartScreenView: View {
             highlightedName(abbreviatedPath(record.directoryPath)).font(.callout).foregroundColor(.secondary)
                 .lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 4)
-            Text(exists ? dateLabel(record.lastOpened) : "not found")
-                .font(.caption).foregroundStyle(exists ? Color.secondary : Color.gray)
+            if !exists {
+                Text("not found").font(.caption).foregroundStyle(Color.gray)
+            } else if StartScreenPresentation.showsDate(for: record) {
+                Text(dateLabel(record.lastOpened)).font(.caption).foregroundStyle(Color.secondary)
+            }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .foregroundStyle(exists ? Color.primary : Color.gray)
