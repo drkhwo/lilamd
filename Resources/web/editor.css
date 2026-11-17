@@ -7,6 +7,10 @@ body { background: #fafbfc; }
 body.dark { background: #2f363d; }
 .vditor-ir pre.vditor-reset, .vditor-wysiwyg pre.vditor-reset, .vditor-sv { background-color: var(--textarea-background-color); }
 #editor { height: 100%; }
+::highlight(mdedit-find) { background-color: rgba(255, 193, 7, 0.38); color: inherit; }
+::highlight(mdedit-find-current) { background-color: rgba(255, 145, 0, 0.68); color: inherit; }
+body.dark ::highlight(mdedit-find) { background-color: rgba(255, 193, 7, 0.28); }
+body.dark ::highlight(mdedit-find-current) { background-color: rgba(255, 145, 0, 0.58); }
 .vditor { border: none !important; }
 .vditor-toolbar { display: none !important; }
 .vditor-reset { font-size: 15px; }

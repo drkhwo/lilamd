@@ -48,6 +48,19 @@ struct MDEditorApp: App {
                 Button("Redo") { EditorController.forKeyWindow()?.redo() }
                     .keyboardShortcut("z", modifiers: [.command, .shift])
             }
+            CommandGroup(after: .textEditing) {
+                Menu("Find") {
+                    Button("Find…") { appDelegate.find() }
+                        .keyboardShortcut("f", modifiers: .command)
+                    Button("Find Next") { appDelegate.findNext() }
+                        .keyboardShortcut("g", modifiers: .command)
+                    Button("Find Previous") { appDelegate.findPrevious() }
+                        .keyboardShortcut("g", modifiers: [.command, .shift])
+                    Divider()
+                    Button("Use Selection for Find") { appDelegate.useSelectionForFind() }
+                        .keyboardShortcut("e", modifiers: .command)
+                }
+            }
             CommandGroup(before: .toolbar) {
                 Toggle("Visual", isOn: Binding(get: { mode == .visual }, set: { _ in mode = .visual }))
                     .keyboardShortcut("1", modifiers: .command)

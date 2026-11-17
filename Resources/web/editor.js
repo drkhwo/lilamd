@@ -7,6 +7,10 @@
   let generation = 0;
   let dark = false;
   const latencies = [];
+  let findQuery = "";
+  let findRanges = [];
+  let findIndex = -1;
+  let findTimer = null;
 
   function hljsStyle() { return dark ? "github-dark" : "github"; }
 
@@ -57,6 +61,7 @@
         const root = scroller();
         if (root) root.focus({ preventScroll: true });
         if (scrollRatio) restoreScroll(scrollRatio);
+        if (findQuery) updateFind(findQuery, findIndex);
         post({ type: "ready", baseline: v.getValue(), mode: mode });
       },
     });
@@ -265,6 +270,148 @@
     if (s) s.scrollTop = r * (s.scrollHeight - s.clientHeight);
   }
 
+  function findRoot() {
+    const root = scroller();
+    return root instanceof HTMLTextAreaElement ? root : root && root.querySelector("textarea") || root;
+  }
+
+  function clearHighlights() {
+    if (window.CSS && CSS.highlights) {
+      CSS.highlights.delete("mdedit-find");
+      CSS.highlights.delete("mdedit-find-current");
+    }
+    findRanges = [];
+  }
+
+  function updateFind(query, preferredIndex = findIndex) {
+    findQuery = query;
+    clearHighlights();
+    const root = findRoot();
+    if (!root || !query) { findIndex = -1; return { count: 0, index: -1 }; }
+
+    const textarea = root instanceof HTMLTextAreaElement ? root : null;
+    const matches = [];
+    if (textarea) {
+      const value = textarea.value;
+      const expression = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
+      let match;
+      while ((match = expression.exec(value))) {
+        matches.push({ start: match.index, end: match.index + match[0].length });
+        if (!match[0].length) expression.lastIndex++;
+      }
+      findRanges = matches;
+    } else {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent || parent.closest("script, style, textarea, .vditor-toolbar, .vditor-hint, .vditor-ir__marker")) return NodeFilter.FILTER_REJECT;
+          if (parent.closest("[hidden], [aria-hidden='true']")) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
+      const nodes = [];
+      let text = "";
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const block = node.parentElement.closest("p, h1, h2, h3, h4, h5, h6, li, pre, blockquote, td, th, .vditor-ir__node");
+        const previousBlock = nodes.length && nodes[nodes.length - 1].block;
+        if (nodes.length && block !== previousBlock) text += "\n";
+        const start = text.length;
+        text += node.textContent;
+        nodes.push({ node, start, end: text.length, block });
+      }
+
+      const locate = (offset) => {
+        const entry = nodes.find((item, index) => offset < item.end || (offset === item.end && index === nodes.length - 1));
+        if (!entry) return null;
+        return { node: entry.node, offset: Math.max(0, Math.min(entry.end - entry.start, offset - entry.start)) };
+      };
+      const expression = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
+      let match;
+      while ((match = expression.exec(text))) {
+        const start = locate(match.index);
+        const end = locate(match.index + match[0].length);
+        if (start && end) {
+          const range = document.createRange();
+          range.setStart(start.node, start.offset);
+          range.setEnd(end.node, end.offset);
+          matches.push(range);
+        }
+        if (!match[0].length) expression.lastIndex++;
+      }
+      findRanges = matches;
+    }
+
+    if (!matches.length) { findIndex = -1; return { count: 0, index: -1 }; }
+    findIndex = ((preferredIndex % matches.length) + matches.length) % matches.length;
+    if (!textarea && window.CSS && CSS.highlights) {
+      CSS.highlights.set("mdedit-find", new Highlight(...matches));
+      CSS.highlights.set("mdedit-find-current", new Highlight(matches[findIndex]));
+    }
+    scrollToFind(textarea);
+    return { count: matches.length, index: findIndex };
+  }
+
+  function scrollToFind(textarea = null) {
+    const current = findRanges[findIndex];
+    if (!current) return;
+    if (textarea) {
+      textarea.setSelectionRange(current.start, current.end);
+      const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 18;
+      const line = textarea.value.slice(0, current.start).split("\n").length - 1;
+      const top = line * lineHeight;
+      if (top < textarea.scrollTop || top + lineHeight > textarea.scrollTop + textarea.clientHeight) textarea.scrollTop = top;
+    } else {
+      const rect = current.getBoundingClientRect();
+      const root = scroller();
+      const bounds = root && root.getBoundingClientRect();
+      if (bounds && (rect.top < bounds.top || rect.bottom > bounds.bottom)) {
+        current.startContainer.parentElement?.scrollIntoView({ block: "center" });
+      }
+    }
+  }
+
+  function stepFind(delta) {
+    if (!findRanges.length) return { count: 0, index: -1 };
+    findIndex = (findIndex + delta + findRanges.length) % findRanges.length;
+    const root = findRoot();
+    const textarea = root instanceof HTMLTextAreaElement ? root : null;
+    if (!textarea && window.CSS && CSS.highlights) CSS.highlights.set("mdedit-find-current", new Highlight(findRanges[findIndex]));
+    scrollToFind(textarea);
+    return { count: findRanges.length, index: findIndex };
+  }
+
+  function selectionText() {
+    const root = scroller();
+    const textarea = root instanceof HTMLTextAreaElement ? root : root && root.querySelector("textarea");
+    if (textarea) return textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
+    const selection = getSelection();
+    return selection && root && root.contains(selection.anchorNode) ? selection.toString() : "";
+  }
+
+  function closeFind() {
+    const root = findRoot();
+    const textarea = root instanceof HTMLTextAreaElement ? root : null;
+    if (!textarea && findRanges[findIndex]) {
+      const range = findRanges[findIndex];
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    clearHighlights();
+    if (root && root.focus) root.focus({ preventScroll: true });
+  }
+
+  document.addEventListener("input", (event) => {
+    const root = scroller();
+    if (!findQuery || !(root === event.target || root?.contains(event.target))) return;
+    clearTimeout(findTimer);
+    findTimer = setTimeout(() => {
+      const result = updateFind(findQuery, findIndex);
+      post({ type: "find", query: findQuery, count: result.count, index: result.index });
+    }, 180);
+  }, true);
+
   // Cmd+click on a link opens it in the default browser; a plain click only places the caret.
   document.addEventListener("click", (e) => {
     const a = e.target.closest && e.target.closest("a[href]");
@@ -342,6 +489,11 @@
     },
     undo() { if (vditor) vditor.vditor.undo.undo(vditor.vditor); },
     redo() { if (vditor) vditor.vditor.undo.redo(vditor.vditor); },
+    find(query, index = 0) { return updateFind(query, index); },
+    findNext() { return stepFind(1); },
+    findPrevious() { return stepFind(-1); },
+    clearFind() { findQuery = ""; closeFind(); findIndex = -1; },
+    selectionText,
     getValue() { return vditor ? vditor.getValue() : null; },
     get instance() { return vditor; },
     root() { return scroller(); },

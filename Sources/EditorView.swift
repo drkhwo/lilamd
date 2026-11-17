@@ -69,6 +69,9 @@ struct TabbedWindow: View {
                 VStack(spacing: 0) {
                     TabBarView(store: store, openFiles: openFiles)
                     Divider()
+                    if let active = store.active, active.isFindOpen {
+                        FindBar(document: active)
+                    }
                     ZStack {
                         // Creation order, never reordered: moving a tab never re-parents a WKWebView.
                         ForEach(store.documents.filter { store.shown.contains($0.id) }) { doc in
@@ -90,6 +93,70 @@ struct TabbedWindow: View {
                     }
                     .pickerStyle(.segmented)
                     .help("Visual (⌘1) / Source (⌘2)")
+                }
+            }
+        }
+    }
+}
+
+private struct FindBar: View {
+    @ObservedObject var document: OpenDocument
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Find", text: Binding(
+                get: { document.findQuery },
+                set: { document.setFindQuery($0) }
+            ))
+            .textFieldStyle(.plain)
+            .focused($focused)
+            .onSubmit { document.findNext() }
+            .onKeyPress(keys: [.return]) { press in
+                guard press.modifiers.contains(.shift) else { return .ignored }
+                document.findPrevious()
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                document.closeFind()
+                return .handled
+            }
+            .onKeyPress(keys: [.init("f")]) { press in
+                guard press.modifiers.contains(.command) else { return .ignored }
+                focused = true
+                return .handled
+            }
+            Group {
+                if document.findCount == 0 {
+                    Text("Not found")
+                } else {
+                    Text("\(document.findIndex + 1) of \(document.findCount)")
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(minWidth: 76, alignment: .trailing)
+            Button { document.findPrevious() } label: { Image(systemName: "chevron.up") }
+                .help("Find Previous")
+                .disabled(document.findCount == 0)
+            Button { document.findNext() } label: { Image(systemName: "chevron.down") }
+                .help("Find Next")
+                .disabled(document.findCount == 0)
+            Button("Done") { document.closeFind() }
+                .keyboardShortcut(.escape, modifiers: [])
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(Color(nsColor: EditorPalette.pageBackground))
+        .overlay(alignment: .bottom) { Divider() }
+        .onAppear { focused = true }
+        .onChange(of: document.findFocusRequest) { _, _ in
+            focused = true
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
                 }
             }
         }

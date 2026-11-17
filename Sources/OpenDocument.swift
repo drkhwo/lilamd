@@ -10,6 +10,11 @@ final class OpenDocument: ObservableObject, Identifiable {
     @Published private(set) var isDirty = false
     /// File name, or "Untitled 2".
     @Published private(set) var displayName: String
+    @Published private(set) var isFindOpen = false
+    @Published private(set) var findQuery = ""
+    @Published private(set) var findCount = 0
+    @Published private(set) var findIndex = -1
+    @Published private(set) var findFocusRequest = 0
     private(set) var file: MarkdownDocument
     /// Bytes last read from or written to disk; nil for Untitled. A save compares the disk with these.
     private(set) var diskData: Data?
@@ -38,6 +43,7 @@ final class OpenDocument: ObservableObject, Identifiable {
     private var savesInFlight = 0
     /// The tab is gone (`close`): a `saveAll` that listed it earlier must not autosave it.
     private var isClosed = false
+    private var findGeneration = 0
 
     init(untitledName: String) {
         displayName = untitledName
@@ -77,8 +83,75 @@ final class OpenDocument: ObservableObject, Identifiable {
         let made = EditorController(text: text, mode: mode, documentDirectory: url?.deletingLastPathComponent())
         made.setZoom(zoom)
         made.onTextChange = { [weak self] in self?.editorChanged($0) }
+        made.onReady = { [weak self] in
+            guard let self, self.isFindOpen else { return }
+            self.search(self.findQuery, preferredIndex: self.findIndex)
+        }
+        made.onFindChange = { [weak self] result in
+            guard let self, self.isFindOpen else { return }
+            self.applyFindResult(result)
+        }
         controller = made
         return made
+    }
+
+    func openFind() async {
+        if !isFindOpen, findQuery.isEmpty, let selected = await controller?.selectionText(), !selected.isEmpty {
+            findQuery = selected
+        }
+        isFindOpen = true
+        findFocusRequest += 1
+        search(findQuery, preferredIndex: findIndex < 0 ? 0 : findIndex)
+    }
+
+    func setFindQuery(_ query: String) {
+        search(query, preferredIndex: 0)
+    }
+
+    private func search(_ query: String, preferredIndex: Int) {
+        findQuery = query
+        findGeneration += 1
+        let generation = findGeneration
+        guard isFindOpen, let controller else {
+            findCount = 0
+            findIndex = -1
+            return
+        }
+        Task { @MainActor [weak self, weak controller] in
+            guard let self, let controller else { return }
+            let result = await controller.find(query, preferredIndex: preferredIndex)
+            guard generation == self.findGeneration else { return }
+            self.applyFindResult(result)
+        }
+    }
+
+    func findNext() {
+        stepFind(previous: false)
+    }
+
+    func findPrevious() {
+        stepFind(previous: true)
+    }
+
+    private func stepFind(previous: Bool) {
+        guard isFindOpen, let controller else { return }
+        Task { @MainActor [weak self, weak controller] in
+            guard let self, let controller else { return }
+            let result = previous ? await controller.findPrevious() : await controller.findNext()
+            self.applyFindResult(result)
+        }
+    }
+
+    func closeFind() {
+        guard isFindOpen else { return }
+        isFindOpen = false
+        findGeneration += 1
+        controller?.clearFind()
+    }
+
+    private func applyFindResult(_ result: EditorFindResult) {
+        findCount = result.count
+        findIndex = result.index
     }
 
     /// From `controller.onTextChange`.

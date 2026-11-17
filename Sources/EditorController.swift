@@ -1,6 +1,12 @@
 import AppKit
 import WebKit
 
+struct EditorFindResult: Equatable {
+    let count: Int
+    /// Zero-based, or -1 when there is no current match.
+    let index: Int
+}
+
 /// Owns the WKWebView with Vditor and keeps the document text in sync with it.
 @MainActor
 final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
@@ -14,6 +20,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     private(set) var zoom = 1.0
     private var preserver: SourcePreserver?
     private var appearanceObservation: NSKeyValueObservation?
+    private var findQuery = ""
 
     /// Called when the user changed the document in the editor.
     var onTextChange: ((String) -> Void)?
@@ -25,6 +32,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     /// Per-character editor work: from the moment the page sees the keydown to input handled (no queueing).
     private(set) var processing: [Double] = []
     var onReady: (() -> Void)?
+    var onFindChange: ((EditorFindResult) -> Void)?
     /// Files dropped on the editor: they open as tabs instead of being loaded by the web view.
     var onOpenFiles: (([URL]) -> Void)? {
         get { (webView as? EditorWebView)?.onOpenFiles }
@@ -97,6 +105,32 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     /// go to Vditor's own history, so the menu and the editor never disagree.
     func undo() { call("mdeditor.undo()", [:]) }
     func redo() { call("mdeditor.redo()", [:]) }
+
+    func find(_ query: String, preferredIndex: Int = 0) async -> EditorFindResult {
+        findQuery = query
+        guard isReady else { return EditorFindResult(count: 0, index: -1) }
+        return await findResult("return mdeditor.find(query, index)", arguments: ["query": query, "index": preferredIndex])
+    }
+
+    func findNext() async -> EditorFindResult { await findResult("return mdeditor.findNext()") }
+    func findPrevious() async -> EditorFindResult { await findResult("return mdeditor.findPrevious()") }
+
+    func clearFind() {
+        findQuery = ""
+        call("mdeditor.clearFind()", [:])
+    }
+
+    func selectionText() async -> String {
+        (try? await evaluate("return mdeditor.selectionText()")) as? String ?? ""
+    }
+
+    private func findResult(_ script: String, arguments: [String: Any] = [:]) async -> EditorFindResult {
+        guard isReady,
+              let value = try? await evaluate(script, arguments: arguments) as? [String: Any],
+              let count = value["count"] as? Int,
+              let index = value["index"] as? Int else { return EditorFindResult(count: 0, index: -1) }
+        return EditorFindResult(count: count, index: index)
+    }
 
     /// The editor of the key window (or, if the app is not active, the frontmost window with an editor).
     /// The main window answers with its active tab; other windows (tests) are searched, skipping hidden editors.
@@ -176,6 +210,12 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             guard merged != text else { return }
             text = merged
             onTextChange?(merged)
+        case "find":
+            guard let query = body["query"] as? String,
+                  query == findQuery,
+                  let count = body["count"] as? Int,
+                  let index = body["index"] as? Int else { return }
+            onFindChange?(EditorFindResult(count: count, index: index))
         case "openLink":
             guard let raw = body["url"] as? String, let url = URL(string: raw), let scheme = url.scheme?.lowercased(),
                   ["http", "https", "mailto"].contains(scheme) else { return }

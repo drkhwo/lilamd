@@ -193,6 +193,9 @@ struct StartScreenView: View {
             searchFocused = true
             return .handled
         }
+        .onReceive(NotificationCenter.default.publisher(for: .focusStartScreenSearch)) { _ in
+            searchFocused = true
+        }
     }
 
     @ViewBuilder private func section(_ title: String, records: [HistoryRecord]) -> some View {
@@ -275,4 +278,8 @@ struct StartScreenView: View {
         formatter.dateFormat = calendar.isDate(date, equalTo: .now, toGranularity: .weekOfYear) ? "EEEE" : "d MMM"
         return formatter.string(from: date)
     }
+}
+
+extension Notification.Name {
+    static let focusStartScreenSearch = Notification.Name("LilaMD.focusStartScreenSearch")
 }

@@ -237,6 +237,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .window(let window): window.performClose(nil)
         }
     }
+
+    func find() { targetWindow().find() }
+    func findNext() { targetWindow().findNext() }
+    func findPrevious() { targetWindow().findPrevious() }
+    func useSelectionForFind() { targetWindow().useSelectionForFind() }
 }
 
 enum AppLaunchRoute: Equatable {

@@ -114,6 +114,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         Task { await store.close(id) }
     }
 
+    func find() {
+        if let active = store.active {
+            Task { await active.openFind() }
+        } else {
+            show()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .focusStartScreenSearch, object: nil)
+            }
+        }
+    }
+
+    func findNext() { store.active?.findNext() }
+    func findPrevious() { store.active?.findPrevious() }
+
+    func useSelectionForFind() {
+        guard let active = store.active else { return }
+        Task { @MainActor in
+            let selection = await active.controller?.selectionText() ?? ""
+            await active.openFind()
+            if !selection.isEmpty { active.setFindQuery(selection) }
+        }
+    }
+
     /// ⌃Tab / ⇧⌘] next tab, ⌃⇧Tab / ⇧⌘[ previous, wrapping around (TB-8). Taken before the window sees the key:
     /// SwiftUI gives a menu item one shortcut only, and Vditor's Tab handlers (table cells) ignore Control.
     /// Key codes, not characters: the same keys in every keyboard layout.
