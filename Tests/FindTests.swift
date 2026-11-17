@@ -320,16 +320,68 @@ final class FindTests: XCTestCase {
         XCTAssertTrue(result?["text"]?.contains("match here") == true)
     }
 
-    func testSourceFindDoesNotJoinLines() async throws {
-        harness = try await EditorHarness(text: "- foo\n  bar\n")
-        harness!.controller.setMode(.source)
-        try await waitUntil(20, "Source mode ready") {
+    func testMissingHighlightModeSwitchSelectsCurrentMatchWhenFindIsUnfocused() async throws {
+        let document = OpenDocument(untitledName: "Fallback")
+        document.editorChanged("needle here\n")
+        let controller = document.makeController(mode: .visual, zoom: 1)
+        harness = try await EditorHarness(controller: controller)
+        await document.openFind()
+        document.setFindQuery("needle")
+        try await waitUntil(5, "find match before mode switch") { document.findCount == 1 }
+        document.setFindFieldFocused(false)
+        _ = try await harness!.js("Object.defineProperty(CSS, 'highlights', { configurable: true, value: undefined }); return true")
+        controller.setMode(.source)
+        try await waitUntil(20, "source mode ready") {
             try await self.harness!.js("return mdeditor.instance && mdeditor.instance.getCurrentMode()") as? String == "sv"
         }
-        let joined = await harness!.controller.find("foobar")
-        let line = await harness!.controller.find("foo")
-        XCTAssertEqual(joined.count, 0)
-        XCTAssertEqual(line.count, 1)
+        try await waitUntil(5, "fallback current match selected after ready") {
+            try await self.harness!.js("return getSelection().toString()") as? String == "needle"
+        }
+    }
+
+    func testSourceFindDoesNotJoinLines() async throws {
+        for sample in ["foo\nbar\n", "```\nfoo\nbar\n```\n"] {
+            harness = try await EditorHarness(text: sample)
+            harness!.controller.setMode(.source)
+            try await waitUntil(20, "Source mode ready") {
+                try await self.harness!.js("return mdeditor.instance && mdeditor.instance.getCurrentMode()") as? String == "sv"
+            }
+            let joined = await harness!.controller.find("foobar")
+            let foo = await harness!.controller.find("foo")
+            let bar = await harness!.controller.find("bar")
+            XCTAssertEqual(joined.count, 0)
+            XCTAssertEqual(foo.count, 1)
+            XCTAssertEqual(bar.count, 1)
+            harness!.close()
+            harness = nil
+        }
+    }
+
+    func testFindCounterShowsCapPlus() {
+        XCTAssertEqual(FindCounterPresentation.text(index: 2, count: 10_000), "3 of 10000+")
+        XCTAssertEqual(FindCounterPresentation.text(index: 2, count: 9_999), "3 of 9999")
+    }
+
+    func testClosedCommandEResetsFindPositionAndCount() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "find-command-e-reset-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appending(path: "selection.md")
+        try Data("foo foo foo\n".utf8).write(to: url)
+        let document = try OpenDocument(contentsOf: url)
+        let controller = document.makeController(mode: .visual, zoom: 1)
+        harness = try await EditorHarness(controller: controller)
+        await document.openFind()
+        document.setFindQuery("foo")
+        try await waitUntil(5, "initial query results") { document.findCount == 3 }
+        document.findNext()
+        try await waitUntil(5, "advanced query position") { document.findIndex == 1 }
+        document.closeFind()
+        document.useSelectionForFind("foo")
+        XCTAssertEqual(document.findIndex, -1)
+        XCTAssertEqual(document.findCount, 0)
+        await document.openFindAndStep(previous: false)
+        try await waitUntil(5, "new closed-bar query stepped") { document.findCount == 3 && document.findIndex == 1 }
     }
 
     func testClosedCommandEStoresQueryUntilFindOpens() async throws {

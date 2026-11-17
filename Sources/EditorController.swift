@@ -110,11 +110,11 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     func undo() { call("mdeditor.undo()", [:]) }
     func redo() { call("mdeditor.redo()", [:]) }
 
-    func find(_ query: String, preferredIndex: Int = 0, generation: Int = 0, shouldScroll: Bool = true) async -> EditorFindResult {
+    func find(_ query: String, preferredIndex: Int = 0, generation: Int = 0, shouldScroll: Bool = true, selectFallback: Bool = false) async -> EditorFindResult {
         findQuery = query
         findGeneration = generation
         guard isReady else { return EditorFindResult(count: 0, index: -1) }
-        return await findResult("return mdeditor.find(query, index, generation, shouldScroll)", arguments: ["query": query, "index": preferredIndex, "generation": generation, "shouldScroll": shouldScroll])
+        return await findResult("return mdeditor.find(query, index, generation, shouldScroll, selectFallback)", arguments: ["query": query, "index": preferredIndex, "generation": generation, "shouldScroll": shouldScroll, "selectFallback": selectFallback])
     }
 
     func findNext(generation: Int = 0) async -> EditorFindResult {
@@ -126,12 +126,17 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         return await findResult("return mdeditor.findPrevious(generation)", arguments: ["generation": generation])
     }
 
-    func closeFind() async {
+    func closeFind() {
         findQuery = ""
         findGeneration += 1
-        _ = try? await evaluate("mdeditor.clearFind(); return true")
-        if isFindBarClosed?() == true, let window = webView.window {
-            window.makeFirstResponder(webView)
+        // Submit the clear while still on the caller's main-actor turn. A later find
+        // must enter WebKit's queue after this call, even if its own Task starts first.
+        webView.callAsyncJavaScript("mdeditor.clearFind(); return true", arguments: [:], in: nil, in: .page) { [weak self] result in
+            if case let .failure(error) = result {
+                log.error("js call failed: \(String(describing: error), privacy: .public)")
+            }
+            guard let self, self.isFindBarClosed?() == true, let window = self.webView.window else { return }
+            window.makeFirstResponder(self.webView)
         }
     }
 

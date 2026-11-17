@@ -285,7 +285,7 @@
     findRanges = [];
   }
 
-  function updateFind(query, preferredIndex = findIndex, shouldScroll = true) {
+  function updateFind(query, preferredIndex = findIndex, shouldScroll = true, selectFallback = false) {
     const retainedOffset = findRanges[findIndex]?.offset;
     findQuery = query;
     findGeneration++;
@@ -306,7 +306,7 @@
             if (displayFor(element).display === "none") return NodeFilter.FILTER_REJECT;
             if (element === root) break;
           }
-          if (node.matches("[data-type='newline']")) return NodeFilter.FILTER_REJECT;
+          if (node.matches("[data-type='newline']")) return NodeFilter.FILTER_SKIP;
           if (node.nodeName === "BR") return NodeFilter.FILTER_ACCEPT;
           return NodeFilter.FILTER_SKIP;
         }
@@ -387,7 +387,7 @@
       for (const item of matches) highlight.add(item.range);
       CSS.highlights.set("mdedit-find", highlight);
       CSS.highlights.set("mdedit-find-current", new Highlight(matches[findIndex].range));
-    } else if (shouldScroll) {
+    } else if (shouldScroll || (selectFallback && !inInputEvent && !composing)) {
       const selection = getSelection();
       selection.removeAllRanges();
       selection.addRange(matches[findIndex].range);
@@ -554,7 +554,7 @@
     },
     undo() { if (vditor) vditor.vditor.undo.undo(vditor.vditor); },
     redo() { if (vditor) vditor.vditor.undo.redo(vditor.vditor); },
-    find(query, index = 0, generation = 0, shouldScroll = true) { nativeFindGeneration = generation; observeFindRoot(); return updateFind(query, index, shouldScroll); },
+    find(query, index = 0, generation = 0, shouldScroll = true, selectFallback = false) { nativeFindGeneration = generation; observeFindRoot(); return updateFind(query, index, shouldScroll, selectFallback); },
     findNext(generation = nativeFindGeneration) { nativeFindGeneration = generation; return stepFind(1); },
     findPrevious(generation = nativeFindGeneration) { nativeFindGeneration = generation; return stepFind(-1); },
     clearFind() { findQuery = ""; closeFind(); findIndex = -1; },

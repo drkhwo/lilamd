@@ -88,7 +88,7 @@ final class OpenDocument: ObservableObject, Identifiable {
         made.isFindBarClosed = { [weak self] in self?.isFindOpen != true }
         made.onReady = { [weak self] in
             guard let self, self.isFindOpen else { return }
-            self.search(self.findQuery, preferredIndex: self.findIndex, shouldScroll: false)
+            self.search(self.findQuery, preferredIndex: self.findIndex, shouldScroll: false, selectFallback: !self.isFindFieldFocused)
         }
         made.onFindChange = { [weak self] result in
             guard let self, self.isFindOpen else { return }
@@ -131,6 +131,10 @@ final class OpenDocument: ObservableObject, Identifiable {
     func useSelectionForFind(_ query: String) {
         guard !query.isEmpty else { return }
         findQuery = query
+        if !isFindOpen {
+            findIndex = -1
+            findCount = 0
+        }
         guard isFindOpen, let controller else { return }
         findGeneration += 1
         let generation = findGeneration
@@ -142,7 +146,7 @@ final class OpenDocument: ObservableObject, Identifiable {
         }
     }
 
-    private func search(_ query: String, preferredIndex: Int, debounce: Bool = false, shouldScroll: Bool = true) {
+    private func search(_ query: String, preferredIndex: Int, debounce: Bool = false, shouldScroll: Bool = true, selectFallback: Bool = false) {
         findQuery = query
         findGeneration += 1
         let generation = findGeneration
@@ -155,7 +159,7 @@ final class OpenDocument: ObservableObject, Identifiable {
             guard let self, let controller else { return }
             if debounce { try? await Task.sleep(for: .milliseconds(100)) }
             guard generation == self.findGeneration else { return }
-            let result = await controller.find(query, preferredIndex: preferredIndex, generation: generation, shouldScroll: shouldScroll)
+            let result = await controller.find(query, preferredIndex: preferredIndex, generation: generation, shouldScroll: shouldScroll, selectFallback: selectFallback)
             guard generation == self.findGeneration else { return }
             self.applyFindResult(result)
         }
@@ -187,7 +191,7 @@ final class OpenDocument: ObservableObject, Identifiable {
         findGeneration += 1
         isFindFieldFocused = false
         if let controller {
-            Task { await controller.closeFind() }
+            controller.closeFind()
         }
     }
 

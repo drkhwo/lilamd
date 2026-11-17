@@ -127,7 +127,7 @@ private struct FindBar: View {
                 if document.findQuery.isEmpty { Text("") }
                 else if document.findCount == 0 { Text("Not found") }
                 else {
-                    Text("\(document.findIndex + 1) of \(document.findCount)")
+                    Text(FindCounterPresentation.text(index: document.findIndex, count: document.findCount))
                 }
             }
             .font(.callout)
@@ -148,6 +148,10 @@ private struct FindBar: View {
         .overlay(alignment: .bottom) { Divider() }
         .onAppear { focused = true }
         .onChange(of: focused) { _, value in document.setFindFieldFocused(value) }
+        .onChange(of: document.id) { _, _ in
+            focused = document.isFindFieldFocused
+            document.setFindFieldFocused(focused)
+        }
         .onChange(of: document.findFocusRequest) { _, _ in
             focused = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -156,5 +160,11 @@ private struct FindBar: View {
                 }
             }
         }
+    }
+}
+
+enum FindCounterPresentation {
+    static func text(index: Int, count: Int) -> String {
+        "\(index + 1) of \(count >= 10_000 ? "10000+" : String(count))"
     }
 }
