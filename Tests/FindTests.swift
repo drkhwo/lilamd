@@ -281,6 +281,123 @@ final class FindTests: XCTestCase {
         XCTAssertEqual(result?["count"], 0)
     }
 
+    func testFindCountsRenderedMathOnce() async throws {
+        harness = try await EditorHarness(text: "Math $x$ here\n")
+        try await waitUntil(5, "math preview rendered") {
+            try await self.harness!.js("return !!mdeditor.root().querySelector('.katex')") as? Bool == true
+        }
+        let result = await harness!.controller.find("x")
+        XCTAssertEqual(result.count, 1)
+    }
+
+    func testMissingHighlightRecountLeavesCaretAndMatchTextAlone() async throws {
+        harness = try await EditorHarness(text: "match here\n\ncaret elsewhere\n")
+        _ = try await harness!.js("""
+          const descriptor = Object.getOwnPropertyDescriptor(CSS, 'highlights');
+          Object.defineProperty(CSS, 'highlights', { configurable: true, value: undefined });
+          mdeditor.find('match', 0);
+          const root = mdeditor.root();
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          let caretNode;
+          while (walker.nextNode()) if (walker.currentNode.textContent.includes('caret')) caretNode = walker.currentNode;
+          const range = document.createRange();
+          range.setStart(caretNode, 5); range.collapse(true);
+          const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+          caretNode.appendData(' edited');
+          root.dispatchEvent(new Event('input', { bubbles: true }));
+          setTimeout(() => {
+            window.__findFallbackRecount = { anchor: selection.anchorNode?.textContent, offset: String(selection.anchorOffset),
+              collapsed: String(selection.isCollapsed), text: root.textContent };
+            if (descriptor) Object.defineProperty(CSS, 'highlights', descriptor);
+          }, 400);
+          return true;
+        """)
+        try await Task.sleep(for: .milliseconds(450))
+        let result = try await harness!.js("return window.__findFallbackRecount") as? [String: String]
+        XCTAssertTrue(result?["anchor"]?.contains("caret") == true)
+        XCTAssertEqual(result?["offset"], "5")
+        XCTAssertEqual(result?["collapsed"], "true")
+        XCTAssertTrue(result?["text"]?.contains("match here") == true)
+    }
+
+    func testSourceFindDoesNotJoinLines() async throws {
+        harness = try await EditorHarness(text: "- foo\n  bar\n")
+        harness!.controller.setMode(.source)
+        try await waitUntil(20, "Source mode ready") {
+            try await self.harness!.js("return mdeditor.instance && mdeditor.instance.getCurrentMode()") as? String == "sv"
+        }
+        let joined = await harness!.controller.find("foobar")
+        let line = await harness!.controller.find("foo")
+        XCTAssertEqual(joined.count, 0)
+        XCTAssertEqual(line.count, 1)
+    }
+
+    func testClosedCommandEStoresQueryUntilFindOpens() async throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "find-command-e-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appending(path: "selection.md")
+        try Data("selected phrase\n".utf8).write(to: url)
+        let document = try OpenDocument(contentsOf: url)
+        let controller = document.makeController(mode: .visual, zoom: 1)
+        harness = try await EditorHarness(controller: controller)
+        document.useSelectionForFind("selected")
+        XCTAssertEqual(document.findQuery, "selected")
+        XCTAssertFalse(document.isFindOpen)
+        let inactive = try await harness!.js("return !CSS.highlights.has('mdedit-find') && !CSS.highlights.has('mdedit-find-current')") as? Bool
+        XCTAssertEqual(inactive, true)
+        await document.openFindAndStep(previous: false)
+        XCTAssertTrue(document.isFindOpen)
+        try await waitUntil(5, "query searched after opening") { document.findCount == 1 }
+    }
+
+    func testFindShortcutUsesKeyInsteadOfPhysicalCode() async throws {
+        harness = try await EditorHarness(text: "shortcut event\n")
+        let counts = try await harness!.js("""
+          const root = mdeditor.root();
+          let received = 0;
+          root.addEventListener('keydown', () => received++);
+          root.dispatchEvent(new KeyboardEvent('keydown', { key: 'i', code: 'KeyG', metaKey: true, bubbles: true }));
+          const commandI = received;
+          root.dispatchEvent(new KeyboardEvent('keydown', { key: 'G', code: 'KeyU', metaKey: true, shiftKey: true, bubbles: true }));
+          return [commandI, received];
+        """) as? [Int]
+        XCTAssertEqual(counts, [1, 1])
+    }
+
+    func testFindCapsCountAndSteppingAtTenThousand() async throws {
+        harness = try await EditorHarness(text: String(repeating: "x ", count: 10_001))
+        let first = await harness!.controller.find("x")
+        let next = await harness!.controller.findNext()
+        XCTAssertEqual(first.count, 10_000)
+        XCTAssertEqual(next.count, 10_000)
+        XCTAssertEqual(next.index, 1)
+    }
+
+    func testEscapeInFocusedFindFieldClosesBarAndRestoresWebViewFocus() async throws {
+        try requireForeground()
+        let folder = FileManager.default.temporaryDirectory.appending(path: "find-escape-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appending(path: "escape.md")
+        try Data("escape target\n".utf8).write(to: url)
+        let document = try OpenDocument(contentsOf: url)
+        let controller = document.makeController(mode: .visual, zoom: 1)
+        harness = try await EditorHarness(controller: controller)
+        await document.openFind()
+        try await waitUntil(3, "find field focused") { document.isFindFieldFocused }
+        let window = harness!.window
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                                     timestamp: ProcessInfo.processInfo.systemUptime,
+                                     windowNumber: window.windowNumber, context: nil,
+                                     characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+                                     isARepeat: false, keyCode: 53)!
+        NSApp.sendEvent(event)
+        try await waitUntil(5, "find closed and web view focused") {
+            !document.isFindOpen && window.firstResponder === controller.webView
+        }
+    }
+
     func testFindOnStartScreenFocusesHistorySearch() async throws {
         try requireForeground()
         let root = FileManager.default.temporaryDirectory.appending(path: "find-start-\(UUID().uuidString)")

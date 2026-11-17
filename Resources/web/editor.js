@@ -292,16 +292,31 @@
     clearHighlights();
     const root = findRoot();
     if (!root || !query) { findIndex = -1; return { count: 0, index: -1 }; }
-    const priorScrollTop = shouldScroll ? null : root.scrollTop;
-
     const matches = [];
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    const styles = new Map();
+    const displayFor = (element) => {
+      if (!styles.has(element)) styles.set(element, getComputedStyle(element));
+      return styles.get(element);
+    };
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          if (node.closest("[hidden], .katex-mathml, .sr-only, .visually-hidden")) return NodeFilter.FILTER_REJECT;
+          for (let element = node; element; element = element.parentElement) {
+            if (displayFor(element).display === "none") return NodeFilter.FILTER_REJECT;
+            if (element === root) break;
+          }
+          if (node.matches("[data-type='newline']")) return NodeFilter.FILTER_REJECT;
+          if (node.nodeName === "BR") return NodeFilter.FILTER_ACCEPT;
+          return NodeFilter.FILTER_SKIP;
+        }
         const parent = node.parentElement;
         if (!parent || parent.closest("script, style, .vditor-toolbar, .vditor-hint, .vditor-ir__marker")) return NodeFilter.FILTER_REJECT;
-        if (parent.closest("[hidden], [aria-hidden='true']")) return NodeFilter.FILTER_REJECT;
+        if (parent.closest(".katex-mathml, .sr-only, .visually-hidden, [hidden]")) return NodeFilter.FILTER_REJECT;
         for (let element = parent; element; element = element.parentElement) {
-          if (getComputedStyle(element).display === "none") return NodeFilter.FILTER_REJECT;
+          const style = displayFor(element);
+          if (style.display === "none" || style.visibility === "hidden" || style.contentVisibility === "hidden" ||
+              (style.position === "absolute" && (style.clip !== "auto" && style.clip !== "none" || style.clipPath !== "none" || element.offsetWidth <= 1 || element.offsetHeight <= 1))) return NodeFilter.FILTER_REJECT;
           if (element === root) break;
         }
         return NodeFilter.FILTER_ACCEPT;
@@ -311,7 +326,7 @@
     let text = "";
     const blockFor = (node) => {
       for (let element = node.parentElement; element; element = element.parentElement) {
-        const display = getComputedStyle(element).display;
+        const display = displayFor(element).display;
         if (!["inline", "inline-block", "inline-flex", "inline-grid", "contents"].includes(display)) return element;
         if (element === root) break;
       }
@@ -319,6 +334,10 @@
     };
     while (walker.nextNode()) {
       const node = walker.currentNode;
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        text += "\n";
+        continue;
+      }
       const block = blockFor(node);
       if (nodes.length && block !== nodes[nodes.length - 1].block) text += "\n";
       const start = text.length;
@@ -341,7 +360,7 @@
     let match;
     let count = 0;
     while ((match = expression.exec(text))) {
-      count++;
+      count = Math.min(10000, count + 1);
       if (matches.length < 10000) {
         const start = locate(match.index), end = locate(match.index + match[0].length);
         if (start && end) {
@@ -368,11 +387,10 @@
       for (const item of matches) highlight.add(item.range);
       CSS.highlights.set("mdedit-find", highlight);
       CSS.highlights.set("mdedit-find-current", new Highlight(matches[findIndex].range));
-    } else {
+    } else if (shouldScroll) {
       const selection = getSelection();
       selection.removeAllRanges();
       selection.addRange(matches[findIndex].range);
-      if (priorScrollTop !== null) root.scrollTop = priorScrollTop;
     }
     if (shouldScroll) scrollToFind();
     return { count, index: findIndex };
@@ -431,7 +449,6 @@
         findIndex = findRanges.findIndex(item => item.offset >= offset);
         if (findIndex < 0) findIndex = findRanges.length - 1;
         if (window.CSS && CSS.highlights && typeof Highlight === "function") CSS.highlights.set("mdedit-find-current", new Highlight(findRanges[findIndex].range));
-        else { const selection = getSelection(); selection.removeAllRanges(); selection.addRange(findRanges[findIndex].range); }
       }
       if (rootScrollTop !== undefined && scroller()) scroller().scrollTop = rootScrollTop;
       if (generation + 1 === recountGeneration && recountGeneration === findGeneration) {
@@ -451,7 +468,7 @@
     if (root === observedRoot) return;
     findObserver.disconnect();
     observedRoot = root;
-    if (root) findObserver.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "style", "hidden", "aria-hidden"] });
+    if (root) findObserver.observe(root, { subtree: true, childList: true, characterData: true });
   }
 
   // Cmd+click on a link opens it in the default browser; a plain click only places the caret.
@@ -475,8 +492,9 @@
   // "+" / "_", Vditor on macOS matches "=" / "-". preventDefault keeps WebKit from passing the key back to AppKit;
   // the app-wide key monitor forwards the physical key codes to this web view before the Zoom menu can see them.
   document.addEventListener("keydown", (e) => {
-    if (e.isTrusted && e.metaKey && !e.altKey && !e.ctrlKey &&
-        ((e.code === "KeyG") || (e.code === "KeyE" && !e.shiftKey))) {
+    const key = e.key.toLowerCase();
+    if (e.metaKey && !e.altKey && !e.ctrlKey &&
+        ((key === "g") || (key === "e" && !e.shiftKey))) {
       e.stopImmediatePropagation();
       return;
     }

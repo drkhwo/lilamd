@@ -85,6 +85,7 @@ final class OpenDocument: ObservableObject, Identifiable {
         made.setZoom(zoom)
         made.onTextChange = { [weak self] in self?.editorChanged($0) }
         made.preserveFindFocusOnReady = { [weak self] in self?.isFindOpen == true && self?.isFindFieldFocused == true }
+        made.isFindBarClosed = { [weak self] in self?.isFindOpen != true }
         made.onReady = { [weak self] in
             guard let self, self.isFindOpen else { return }
             self.search(self.findQuery, preferredIndex: self.findIndex, shouldScroll: false)
@@ -125,9 +126,12 @@ final class OpenDocument: ObservableObject, Identifiable {
 
     func setFindFieldFocused(_ focused: Bool) { isFindFieldFocused = focused }
 
+    func findBarDidDeactivate() { isFindFieldFocused = false }
+
     func useSelectionForFind(_ query: String) {
-        guard !query.isEmpty, let controller else { return }
+        guard !query.isEmpty else { return }
         findQuery = query
+        guard isFindOpen, let controller else { return }
         findGeneration += 1
         let generation = findGeneration
         Task { @MainActor [weak self, weak controller] in

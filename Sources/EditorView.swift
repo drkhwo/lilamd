@@ -30,6 +30,7 @@ struct EditorView: NSViewRepresentable {
         controller.onOpenFiles = openFiles
         controller.setZoom(zoom) // every tab, hidden ones too (TB-26)
         view.isHidden = !isActive
+        if !isActive { document.findBarDidDeactivate() }
         defer { context.coordinator.wasActive = isActive }
         guard isActive else { return }
         // Switching the mode recreates Vditor and drops its undo history: only the visible tab follows it now,

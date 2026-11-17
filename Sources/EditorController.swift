@@ -35,6 +35,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     var onReady: (() -> Void)?
     var onFindChange: ((EditorFindResult) -> Void)?
     var preserveFindFocusOnReady: (() -> Bool)?
+    var isFindBarClosed: (() -> Bool)?
     /// Files dropped on the editor: they open as tabs instead of being loaded by the web view.
     var onOpenFiles: (([URL]) -> Void)? {
         get { (webView as? EditorWebView)?.onOpenFiles }
@@ -129,7 +130,9 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         findQuery = ""
         findGeneration += 1
         _ = try? await evaluate("mdeditor.clearFind(); return true")
-        if let window = webView.window { window.makeFirstResponder(webView) }
+        if isFindBarClosed?() == true, let window = webView.window {
+            window.makeFirstResponder(webView)
+        }
     }
 
     func useSelectionForFind(_ query: String, generation: Int) async -> EditorFindResult {
