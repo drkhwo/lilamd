@@ -125,15 +125,26 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    func findNext() { store.active?.findNext() }
-    func findPrevious() { store.active?.findPrevious() }
+    func findNext() {
+        guard let active = store.active else { return }
+        if active.isFindOpen { active.findNext() }
+        else if !active.findQuery.isEmpty {
+            Task { await active.openFindAndStep(previous: false) }
+        }
+    }
+    func findPrevious() {
+        guard let active = store.active else { return }
+        if active.isFindOpen { active.findPrevious() }
+        else if !active.findQuery.isEmpty {
+            Task { await active.openFindAndStep(previous: true) }
+        }
+    }
 
     func useSelectionForFind() {
         guard let active = store.active else { return }
         Task { @MainActor in
             let selection = await active.controller?.selectionText() ?? ""
-            await active.openFind()
-            if !selection.isEmpty { active.setFindQuery(selection) }
+            active.useSelectionForFind(selection)
         }
     }
 

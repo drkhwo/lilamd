@@ -11,12 +11,14 @@
   let findRanges = [];
   let findIndex = -1;
   let findTimer = null;
+  let findGeneration = 0;
+  let nativeFindGeneration = 0;
 
   function hljsStyle() { return dark ? "github-dark" : "github"; }
 
   function applyBodyTheme() { document.body.classList.toggle("dark", dark); }
 
-  function create(value, mode, scrollRatio) {
+  function create(value, mode, scrollRatio, preserveFocus = false) {
     const gen = ++generation;
     // Debounce of Vditor's "input" (= whole-document Markdown conversion): longer for big files.
     const lines = (value.match(/\n/g) || []).length;
@@ -59,9 +61,10 @@
         v.clearStack(); // record the loaded state as the first undo step right away
         hideEmojiHint(v);
         const root = scroller();
-        if (root) root.focus({ preventScroll: true });
+        if (root && !preserveFocus) root.focus({ preventScroll: true });
         if (scrollRatio) restoreScroll(scrollRatio);
-        if (findQuery) updateFind(findQuery, findIndex);
+        observeFindRoot();
+        if (findQuery) updateFind(findQuery, findIndex, false);
         post({ type: "ready", baseline: v.getValue(), mode: mode });
       },
     });
@@ -271,8 +274,7 @@
   }
 
   function findRoot() {
-    const root = scroller();
-    return root instanceof HTMLTextAreaElement ? root : root && root.querySelector("textarea") || root;
+    return scroller();
   }
 
   function clearHighlights() {
@@ -283,117 +285,129 @@
     findRanges = [];
   }
 
-  function updateFind(query, preferredIndex = findIndex) {
+  function updateFind(query, preferredIndex = findIndex, shouldScroll = true) {
+    const retainedOffset = findRanges[findIndex]?.offset;
     findQuery = query;
+    findGeneration++;
     clearHighlights();
     const root = findRoot();
     if (!root || !query) { findIndex = -1; return { count: 0, index: -1 }; }
+    const priorScrollTop = shouldScroll ? null : root.scrollTop;
 
-    const textarea = root instanceof HTMLTextAreaElement ? root : null;
     const matches = [];
-    if (textarea) {
-      const value = textarea.value;
-      const expression = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
-      let match;
-      while ((match = expression.exec(value))) {
-        matches.push({ start: match.index, end: match.index + match[0].length });
-        if (!match[0].length) expression.lastIndex++;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const parent = node.parentElement;
+        if (!parent || parent.closest("script, style, .vditor-toolbar, .vditor-hint, .vditor-ir__marker")) return NodeFilter.FILTER_REJECT;
+        if (parent.closest("[hidden], [aria-hidden='true']")) return NodeFilter.FILTER_REJECT;
+        for (let element = parent; element; element = element.parentElement) {
+          if (getComputedStyle(element).display === "none") return NodeFilter.FILTER_REJECT;
+          if (element === root) break;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const nodes = [];
+    let text = "";
+    const blockFor = (node) => {
+      for (let element = node.parentElement; element; element = element.parentElement) {
+        const display = getComputedStyle(element).display;
+        if (!["inline", "inline-block", "inline-flex", "inline-grid", "contents"].includes(display)) return element;
+        if (element === root) break;
       }
-      findRanges = matches;
-    } else {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-        acceptNode(node) {
-          const parent = node.parentElement;
-          if (!parent || parent.closest("script, style, textarea, .vditor-toolbar, .vditor-hint, .vditor-ir__marker")) return NodeFilter.FILTER_REJECT;
-          if (parent.closest("[hidden], [aria-hidden='true']")) return NodeFilter.FILTER_REJECT;
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      });
-      const nodes = [];
-      let text = "";
-      while (walker.nextNode()) {
-        const node = walker.currentNode;
-        const block = node.parentElement.closest("p, h1, h2, h3, h4, h5, h6, li, pre, blockquote, td, th, .vditor-ir__node");
-        const previousBlock = nodes.length && nodes[nodes.length - 1].block;
-        if (nodes.length && block !== previousBlock) text += "\n";
-        const start = text.length;
-        text += node.textContent;
-        nodes.push({ node, start, end: text.length, block });
-      }
+      return root;
+    };
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const block = blockFor(node);
+      if (nodes.length && block !== nodes[nodes.length - 1].block) text += "\n";
+      const start = text.length;
+      text += node.textContent;
+      nodes.push({ node, start, end: text.length, block });
+    }
 
-      const locate = (offset) => {
-        const entry = nodes.find((item, index) => offset < item.end || (offset === item.end && index === nodes.length - 1));
-        if (!entry) return null;
-        return { node: entry.node, offset: Math.max(0, Math.min(entry.end - entry.start, offset - entry.start)) };
-      };
-      const expression = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
-      let match;
-      while ((match = expression.exec(text))) {
-        const start = locate(match.index);
-        const end = locate(match.index + match[0].length);
+    const locate = (offset) => {
+      let low = 0, high = nodes.length - 1;
+      while (low <= high) {
+        const middle = (low + high) >> 1;
+        const item = nodes[middle];
+        if (offset < item.start) high = middle - 1;
+        else if (offset > item.end || (offset === item.end && middle < nodes.length - 1)) low = middle + 1;
+        else return { node: item.node, offset: Math.max(0, Math.min(item.end - item.start, offset - item.start)) };
+      }
+      return null;
+    };
+    const expression = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
+    let match;
+    let count = 0;
+    while ((match = expression.exec(text))) {
+      count++;
+      if (matches.length < 10000) {
+        const start = locate(match.index), end = locate(match.index + match[0].length);
         if (start && end) {
           const range = document.createRange();
           range.setStart(start.node, start.offset);
           range.setEnd(end.node, end.offset);
-          matches.push(range);
+          matches.push({ range, offset: match.index });
         }
-        if (!match[0].length) expression.lastIndex++;
       }
-      findRanges = matches;
+      if (!match[0].length) expression.lastIndex++;
     }
+    findRanges = matches;
+    findRanges.count = count;
 
-    if (!matches.length) { findIndex = -1; return { count: 0, index: -1 }; }
-    findIndex = ((preferredIndex % matches.length) + matches.length) % matches.length;
-    if (!textarea && window.CSS && CSS.highlights) {
-      CSS.highlights.set("mdedit-find", new Highlight(...matches));
-      CSS.highlights.set("mdedit-find-current", new Highlight(matches[findIndex]));
+    if (!matches.length) { findIndex = -1; return { count, index: -1 }; }
+    if (!shouldScroll && retainedOffset !== undefined) {
+      findIndex = matches.findIndex(item => item.offset >= retainedOffset);
+      if (findIndex < 0) findIndex = matches.length - 1;
+    } else {
+      findIndex = ((preferredIndex % matches.length) + matches.length) % matches.length;
     }
-    scrollToFind(textarea);
-    return { count: matches.length, index: findIndex };
+    if (window.CSS && CSS.highlights && typeof Highlight === "function") {
+      const highlight = new Highlight();
+      for (const item of matches) highlight.add(item.range);
+      CSS.highlights.set("mdedit-find", highlight);
+      CSS.highlights.set("mdedit-find-current", new Highlight(matches[findIndex].range));
+    } else {
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(matches[findIndex].range);
+      if (priorScrollTop !== null) root.scrollTop = priorScrollTop;
+    }
+    if (shouldScroll) scrollToFind();
+    return { count, index: findIndex };
   }
 
-  function scrollToFind(textarea = null) {
+  function scrollToFind() {
     const current = findRanges[findIndex];
     if (!current) return;
-    if (textarea) {
-      textarea.setSelectionRange(current.start, current.end);
-      const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 18;
-      const line = textarea.value.slice(0, current.start).split("\n").length - 1;
-      const top = line * lineHeight;
-      if (top < textarea.scrollTop || top + lineHeight > textarea.scrollTop + textarea.clientHeight) textarea.scrollTop = top;
-    } else {
-      const rect = current.getBoundingClientRect();
-      const root = scroller();
-      const bounds = root && root.getBoundingClientRect();
-      if (bounds && (rect.top < bounds.top || rect.bottom > bounds.bottom)) {
-        current.startContainer.parentElement?.scrollIntoView({ block: "center" });
-      }
+    const rect = current.range.getBoundingClientRect();
+    const root = scroller();
+    const bounds = root && root.getBoundingClientRect();
+    if (bounds && (rect.top < bounds.top || rect.bottom > bounds.bottom)) {
+      current.range.startContainer.parentElement?.scrollIntoView({ block: "center" });
     }
   }
 
   function stepFind(delta) {
-    if (!findRanges.length) return { count: 0, index: -1 };
+    if (!findRanges.length) return { count: findRanges.count || 0, index: -1 };
     findIndex = (findIndex + delta + findRanges.length) % findRanges.length;
-    const root = findRoot();
-    const textarea = root instanceof HTMLTextAreaElement ? root : null;
-    if (!textarea && window.CSS && CSS.highlights) CSS.highlights.set("mdedit-find-current", new Highlight(findRanges[findIndex]));
-    scrollToFind(textarea);
-    return { count: findRanges.length, index: findIndex };
+    if (window.CSS && CSS.highlights && typeof Highlight === "function") CSS.highlights.set("mdedit-find-current", new Highlight(findRanges[findIndex].range));
+    else { const selection = getSelection(); selection.removeAllRanges(); selection.addRange(findRanges[findIndex].range); }
+    scrollToFind();
+    return { count: findRanges.count || findRanges.length, index: findIndex };
   }
 
   function selectionText() {
     const root = scroller();
-    const textarea = root instanceof HTMLTextAreaElement ? root : root && root.querySelector("textarea");
-    if (textarea) return textarea.value.slice(textarea.selectionStart, textarea.selectionEnd);
     const selection = getSelection();
     return selection && root && root.contains(selection.anchorNode) ? selection.toString() : "";
   }
 
   function closeFind() {
     const root = findRoot();
-    const textarea = root instanceof HTMLTextAreaElement ? root : null;
-    if (!textarea && findRanges[findIndex]) {
-      const range = findRanges[findIndex];
+    if (findRanges[findIndex]) {
+      const range = findRanges[findIndex].range;
       const selection = getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
@@ -402,15 +416,43 @@
     if (root && root.focus) root.focus({ preventScroll: true });
   }
 
+  function scheduleFindRecount() {
+    const root = scroller();
+    if (!findQuery || !root) return;
+    clearTimeout(findTimer);
+    const generation = findGeneration;
+    findTimer = setTimeout(() => {
+      if (generation !== findGeneration || !findQuery) return;
+      const offset = findRanges[findIndex]?.offset || 0;
+      const rootScrollTop = scroller()?.scrollTop;
+      const result = updateFind(findQuery, 0, false);
+      const recountGeneration = findGeneration;
+      if (findRanges.length) {
+        findIndex = findRanges.findIndex(item => item.offset >= offset);
+        if (findIndex < 0) findIndex = findRanges.length - 1;
+        if (window.CSS && CSS.highlights && typeof Highlight === "function") CSS.highlights.set("mdedit-find-current", new Highlight(findRanges[findIndex].range));
+        else { const selection = getSelection(); selection.removeAllRanges(); selection.addRange(findRanges[findIndex].range); }
+      }
+      if (rootScrollTop !== undefined && scroller()) scroller().scrollTop = rootScrollTop;
+      if (generation + 1 === recountGeneration && recountGeneration === findGeneration) {
+        post({ type: "find", query: findQuery, count: result.count, index: findIndex, generation: nativeFindGeneration });
+      }
+    }, 180);
+  }
+
   document.addEventListener("input", (event) => {
     const root = scroller();
-    if (!findQuery || !(root === event.target || root?.contains(event.target))) return;
-    clearTimeout(findTimer);
-    findTimer = setTimeout(() => {
-      const result = updateFind(findQuery, findIndex);
-      post({ type: "find", query: findQuery, count: result.count, index: result.index });
-    }, 180);
+    if (root === event.target || root?.contains(event.target)) scheduleFindRecount();
   }, true);
+  let observedRoot = null;
+  const findObserver = new MutationObserver(() => scheduleFindRecount());
+  function observeFindRoot() {
+    const root = findRoot();
+    if (root === observedRoot) return;
+    findObserver.disconnect();
+    observedRoot = root;
+    if (root) findObserver.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["class", "style", "hidden", "aria-hidden"] });
+  }
 
   // Cmd+click on a link opens it in the default browser; a plain click only places the caret.
   document.addEventListener("click", (e) => {
@@ -433,6 +475,11 @@
   // "+" / "_", Vditor on macOS matches "=" / "-". preventDefault keeps WebKit from passing the key back to AppKit;
   // the app-wide key monitor forwards the physical key codes to this web view before the Zoom menu can see them.
   document.addEventListener("keydown", (e) => {
+    if (e.isTrusted && e.metaKey && !e.altKey && !e.ctrlKey &&
+        ((e.code === "KeyG") || (e.code === "KeyE" && !e.shiftKey))) {
+      e.stopImmediatePropagation();
+      return;
+    }
     if (e.isTrusted && e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey &&
         (e.code === "Equal" || e.code === "Minus")) {
       e.stopImmediatePropagation();
@@ -482,16 +529,16 @@
       restoreScroll(r);
       post({ type: "ready", baseline: vditor.getValue(), mode: vditor.getCurrentMode() === "sv" ? "source" : "visual" });
     },
-    setMode(mode, value) { const r = scrollRatio(); create(value, mode, r); },
+    setMode(mode, value, preserveFocus = false) { const r = scrollRatio(); create(value, mode, r, preserveFocus); },
     setTheme(isDark) {
       dark = !!isDark; applyBodyTheme();
       if (vditor) vditor.setTheme(dark ? "dark" : "classic", dark ? "dark" : "light", hljsStyle());
     },
     undo() { if (vditor) vditor.vditor.undo.undo(vditor.vditor); },
     redo() { if (vditor) vditor.vditor.undo.redo(vditor.vditor); },
-    find(query, index = 0) { return updateFind(query, index); },
-    findNext() { return stepFind(1); },
-    findPrevious() { return stepFind(-1); },
+    find(query, index = 0, generation = 0, shouldScroll = true) { nativeFindGeneration = generation; observeFindRoot(); return updateFind(query, index, shouldScroll); },
+    findNext(generation = nativeFindGeneration) { nativeFindGeneration = generation; return stepFind(1); },
+    findPrevious(generation = nativeFindGeneration) { nativeFindGeneration = generation; return stepFind(-1); },
     clearFind() { findQuery = ""; closeFind(); findIndex = -1; },
     selectionText,
     getValue() { return vditor ? vditor.getValue() : null; },

@@ -15,6 +15,7 @@ final class OpenDocument: ObservableObject, Identifiable {
     @Published private(set) var findCount = 0
     @Published private(set) var findIndex = -1
     @Published private(set) var findFocusRequest = 0
+    @Published private(set) var isFindFieldFocused = false
     private(set) var file: MarkdownDocument
     /// Bytes last read from or written to disk; nil for Untitled. A save compares the disk with these.
     private(set) var diskData: Data?
@@ -83,9 +84,10 @@ final class OpenDocument: ObservableObject, Identifiable {
         let made = EditorController(text: text, mode: mode, documentDirectory: url?.deletingLastPathComponent())
         made.setZoom(zoom)
         made.onTextChange = { [weak self] in self?.editorChanged($0) }
+        made.preserveFindFocusOnReady = { [weak self] in self?.isFindOpen == true && self?.isFindFieldFocused == true }
         made.onReady = { [weak self] in
             guard let self, self.isFindOpen else { return }
-            self.search(self.findQuery, preferredIndex: self.findIndex)
+            self.search(self.findQuery, preferredIndex: self.findIndex, shouldScroll: false)
         }
         made.onFindChange = { [weak self] result in
             guard let self, self.isFindOpen else { return }
@@ -95,8 +97,8 @@ final class OpenDocument: ObservableObject, Identifiable {
         return made
     }
 
-    func openFind() async {
-        if !isFindOpen, findQuery.isEmpty, let selected = await controller?.selectionText(), !selected.isEmpty {
+    func openFind(useSelection: Bool = true) async {
+        if useSelection, !isFindOpen, let selected = await controller?.selectionText(), !selected.isEmpty {
             findQuery = selected
         }
         isFindOpen = true
@@ -104,11 +106,39 @@ final class OpenDocument: ObservableObject, Identifiable {
         search(findQuery, preferredIndex: findIndex < 0 ? 0 : findIndex)
     }
 
-    func setFindQuery(_ query: String) {
-        search(query, preferredIndex: 0)
+    func openFindAndStep(previous: Bool) async {
+        guard !findQuery.isEmpty else { return }
+        isFindOpen = true
+        findFocusRequest += 1
+        findGeneration += 1
+        let generation = findGeneration
+        guard let controller else { return }
+        let result = await controller.find(findQuery, preferredIndex: findIndex < 0 ? 0 : findIndex, generation: generation)
+        guard generation == findGeneration else { return }
+        applyFindResult(result)
+        stepFind(previous: previous)
     }
 
-    private func search(_ query: String, preferredIndex: Int) {
+    func setFindQuery(_ query: String) {
+        search(query, preferredIndex: 0, debounce: true)
+    }
+
+    func setFindFieldFocused(_ focused: Bool) { isFindFieldFocused = focused }
+
+    func useSelectionForFind(_ query: String) {
+        guard !query.isEmpty, let controller else { return }
+        findQuery = query
+        findGeneration += 1
+        let generation = findGeneration
+        Task { @MainActor [weak self, weak controller] in
+            guard let self, let controller else { return }
+            let result = await controller.useSelectionForFind(query, generation: generation)
+            guard generation == self.findGeneration else { return }
+            self.applyFindResult(result)
+        }
+    }
+
+    private func search(_ query: String, preferredIndex: Int, debounce: Bool = false, shouldScroll: Bool = true) {
         findQuery = query
         findGeneration += 1
         let generation = findGeneration
@@ -119,7 +149,9 @@ final class OpenDocument: ObservableObject, Identifiable {
         }
         Task { @MainActor [weak self, weak controller] in
             guard let self, let controller else { return }
-            let result = await controller.find(query, preferredIndex: preferredIndex)
+            if debounce { try? await Task.sleep(for: .milliseconds(100)) }
+            guard generation == self.findGeneration else { return }
+            let result = await controller.find(query, preferredIndex: preferredIndex, generation: generation, shouldScroll: shouldScroll)
             guard generation == self.findGeneration else { return }
             self.applyFindResult(result)
         }
@@ -135,9 +167,12 @@ final class OpenDocument: ObservableObject, Identifiable {
 
     private func stepFind(previous: Bool) {
         guard isFindOpen, let controller else { return }
+        findGeneration += 1
+        let generation = findGeneration
         Task { @MainActor [weak self, weak controller] in
             guard let self, let controller else { return }
-            let result = previous ? await controller.findPrevious() : await controller.findNext()
+            let result = previous ? await controller.findPrevious(generation: generation) : await controller.findNext(generation: generation)
+            guard generation == self.findGeneration else { return }
             self.applyFindResult(result)
         }
     }
@@ -146,7 +181,10 @@ final class OpenDocument: ObservableObject, Identifiable {
         guard isFindOpen else { return }
         isFindOpen = false
         findGeneration += 1
-        controller?.clearFind()
+        isFindFieldFocused = false
+        if let controller {
+            Task { await controller.closeFind() }
+        }
     }
 
     private func applyFindResult(_ result: EditorFindResult) {

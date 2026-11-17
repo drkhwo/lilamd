@@ -21,6 +21,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     private var preserver: SourcePreserver?
     private var appearanceObservation: NSKeyValueObservation?
     private var findQuery = ""
+    private var findGeneration = 0
 
     /// Called when the user changed the document in the editor.
     var onTextChange: ((String) -> Void)?
@@ -33,6 +34,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     private(set) var processing: [Double] = []
     var onReady: (() -> Void)?
     var onFindChange: ((EditorFindResult) -> Void)?
+    var preserveFindFocusOnReady: (() -> Bool)?
     /// Files dropped on the editor: they open as tabs instead of being loaded by the web view.
     var onOpenFiles: (([URL]) -> Void)? {
         get { (webView as? EditorWebView)?.onOpenFiles }
@@ -92,7 +94,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         mode = newMode
         guard isReady else { return }
         preserver = nil
-        call("mdeditor.setMode(mode, value)", ["mode": newMode.rawValue, "value": SourcePreserver.editorText(for: text)])
+        call("mdeditor.setMode(mode, value, preserveFocus)", ["mode": newMode.rawValue, "value": SourcePreserver.editorText(for: text),
+                                                               "preserveFocus": preserveFindFocusOnReady?() == true])
     }
 
     func setZoom(_ newZoom: Double) {
@@ -106,18 +109,34 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     func undo() { call("mdeditor.undo()", [:]) }
     func redo() { call("mdeditor.redo()", [:]) }
 
-    func find(_ query: String, preferredIndex: Int = 0) async -> EditorFindResult {
+    func find(_ query: String, preferredIndex: Int = 0, generation: Int = 0, shouldScroll: Bool = true) async -> EditorFindResult {
         findQuery = query
+        findGeneration = generation
         guard isReady else { return EditorFindResult(count: 0, index: -1) }
-        return await findResult("return mdeditor.find(query, index)", arguments: ["query": query, "index": preferredIndex])
+        return await findResult("return mdeditor.find(query, index, generation, shouldScroll)", arguments: ["query": query, "index": preferredIndex, "generation": generation, "shouldScroll": shouldScroll])
     }
 
-    func findNext() async -> EditorFindResult { await findResult("return mdeditor.findNext()") }
-    func findPrevious() async -> EditorFindResult { await findResult("return mdeditor.findPrevious()") }
+    func findNext(generation: Int = 0) async -> EditorFindResult {
+        findGeneration = generation
+        return await findResult("return mdeditor.findNext(generation)", arguments: ["generation": generation])
+    }
+    func findPrevious(generation: Int = 0) async -> EditorFindResult {
+        findGeneration = generation
+        return await findResult("return mdeditor.findPrevious(generation)", arguments: ["generation": generation])
+    }
 
-    func clearFind() {
+    func closeFind() async {
         findQuery = ""
-        call("mdeditor.clearFind()", [:])
+        findGeneration += 1
+        _ = try? await evaluate("mdeditor.clearFind(); return true")
+        if let window = webView.window { window.makeFirstResponder(webView) }
+    }
+
+    func useSelectionForFind(_ query: String, generation: Int) async -> EditorFindResult {
+        findQuery = query
+        findGeneration = generation
+        guard isReady else { return EditorFindResult(count: 0, index: -1) }
+        return await findResult("return mdeditor.find(query, index, generation)", arguments: ["query": query, "index": 0, "generation": generation])
     }
 
     func selectionText() async -> String {
@@ -201,7 +220,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             preserver = SourcePreserver(original: text, baseline: baseline)
             isReady = true
             webView.pageZoom = zoom
-            focusWhenInWindow()
+            if preserveFindFocusOnReady?() != true { focusWhenInWindow() }
             log.info("editor ready, mode \(self.mode.rawValue, privacy: .public)")
             onReady?()
         case "input":
@@ -213,6 +232,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         case "find":
             guard let query = body["query"] as? String,
                   query == findQuery,
+                  let generation = body["generation"] as? Int,
+                  generation == findGeneration,
                   let count = body["count"] as? Int,
                   let index = body["index"] as? Int else { return }
             onFindChange?(EditorFindResult(count: count, index: index))

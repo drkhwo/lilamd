@@ -37,7 +37,7 @@ struct EditorView: NSViewRepresentable {
         controller.setMode(mode)
         // After this update pass, not inside it: SwiftUI may update the new tab before it hides the old one
         // (a layout pass pulls it first), and hiding the old tab's editor then moves the focus to the toolbar.
-        if !context.coordinator.wasActive {
+        if !context.coordinator.wasActive && !document.isFindFieldFocused {
             DispatchQueue.main.async { MainActor.assumeIsolated { controller.focus() } }
         }
     }
@@ -122,15 +122,10 @@ private struct FindBar: View {
                 document.closeFind()
                 return .handled
             }
-            .onKeyPress(keys: [.init("f")]) { press in
-                guard press.modifiers.contains(.command) else { return .ignored }
-                focused = true
-                return .handled
-            }
             Group {
-                if document.findCount == 0 {
-                    Text("Not found")
-                } else {
+                if document.findQuery.isEmpty { Text("") }
+                else if document.findCount == 0 { Text("Not found") }
+                else {
                     Text("\(document.findIndex + 1) of \(document.findCount)")
                 }
             }
@@ -144,7 +139,6 @@ private struct FindBar: View {
                 .help("Find Next")
                 .disabled(document.findCount == 0)
             Button("Done") { document.closeFind() }
-                .keyboardShortcut(.escape, modifiers: [])
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 12)
@@ -152,9 +146,10 @@ private struct FindBar: View {
         .background(Color(nsColor: EditorPalette.pageBackground))
         .overlay(alignment: .bottom) { Divider() }
         .onAppear { focused = true }
+        .onChange(of: focused) { _, value in document.setFindFieldFocused(value) }
         .onChange(of: document.findFocusRequest) { _, _ in
             focused = true
-            DispatchQueue.main.async {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 MainActor.assumeIsolated {
                     (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectAll(nil)
                 }
