@@ -70,8 +70,8 @@ struct TabbedWindow: View {
                 VStack(spacing: 0) {
                     TabBarView(store: store, openFiles: openFiles)
                     Divider()
-                    if let active = store.active, active.isFindOpen {
-                        FindBar(document: active)
+                    if let active = store.active {
+                        FindBarSlot(document: active)
                     }
                     ZStack {
                         // Creation order, never reordered: moving a tab never re-parents a WKWebView.
@@ -100,6 +100,17 @@ struct TabbedWindow: View {
     }
 }
 
+/// Observes the active tab's find state independently of TabStore's tab-selection state.
+private struct FindBarSlot: View {
+    @ObservedObject var document: OpenDocument
+
+    @ViewBuilder var body: some View {
+        if document.isFindOpen {
+            FindBar(document: document)
+        }
+    }
+}
+
 private struct FindBar: View {
     @ObservedObject var document: OpenDocument
     @FocusState private var focused: Bool
@@ -112,6 +123,7 @@ private struct FindBar: View {
                 set: { document.setFindQuery($0) }
             ))
             .textFieldStyle(.plain)
+            .accessibilityIdentifier("find-field")
             .focused($focused)
             .onSubmit { document.findNext() }
             .onKeyPress(keys: [.return]) { press in

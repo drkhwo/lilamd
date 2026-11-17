@@ -55,6 +55,15 @@ final class TabWindowTests: XCTestCase {
         try await waitUntil(20, "editor of \(doc.displayName) ready") { doc.controller?.isReady == true }
     }
 
+    private func findField(in view: NSView?) -> NSView? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField, field.placeholderString == "Find" { return field }
+        for child in view.subviews {
+            if let match = findField(in: child) { return match }
+        }
+        return nil
+    }
+
     @discardableResult
     private func js(_ doc: OpenDocument, _ code: String, _ args: [String: Any] = [:]) async throws -> Any? {
         try await XCTUnwrap(doc.controller).evaluate(code, arguments: args)
@@ -110,6 +119,43 @@ final class TabWindowTests: XCTestCase {
         XCTAssertEqual(content.height, MDEditorApp.defaultWindowSize.height, accuracy: 1)
         XCTAssertEqual(window.tabbingMode, .disallowed)
         XCTAssertFalse(window.isReleasedWhenClosed)
+    }
+
+    /// The active document publishes find visibility independently from TabStore.
+    func testFindBarTracksActiveDocumentWithoutModeChange() async throws {
+        let second = store.newUntitled()
+        let first = store.newUntitled()
+        XCTAssertEqual(store.activeID, first.id)
+        let window = try XCTUnwrap(wc.window)
+        let hostedView = try XCTUnwrap(window.contentViewController?.view)
+
+        wc.find()
+        try await waitUntil(3, "find field appears for active Visual tab") {
+            hostedView.layoutSubtreeIfNeeded()
+            return self.findField(in: hostedView) != nil
+        }
+
+        first.closeFind()
+        try await waitUntil(3, "find field disappears after close") {
+            hostedView.layoutSubtreeIfNeeded()
+            return self.findField(in: hostedView) == nil
+        }
+
+        await first.openFind()
+        try await waitUntil(3, "find field reappears for first tab") {
+            hostedView.layoutSubtreeIfNeeded()
+            return self.findField(in: hostedView) != nil
+        }
+        store.activate(second.id)
+        try await waitUntil(3, "closed second tab has no find field") {
+            hostedView.layoutSubtreeIfNeeded()
+            return self.findField(in: hostedView) == nil
+        }
+        store.activate(first.id)
+        try await waitUntil(3, "first tab restores its find field") {
+            hostedView.layoutSubtreeIfNeeded()
+            return self.findField(in: hostedView) != nil
+        }
     }
 
     /// Risk 4 of ARCH 2.9: the Visual / Source picker reaches the AppKit window's toolbar.
